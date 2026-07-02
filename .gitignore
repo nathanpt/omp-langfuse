@@ -2,3 +2,6 @@ node_modules/
 *.log
 .DS_Store
 dist/
+
+# Local dev notes (design, roadmap, audits) — not shipped
+.docs/

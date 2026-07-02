@@ -9,11 +9,11 @@ Sends one complete **Langfuse trace per OMP agent run**:
 - one **tool** observation per tool call (including failures)
 
 Ported from [`pi-langfuse`](https://github.com/gooyoung/pi-langfuse) (v1.5.6) and adapted for OMP's
-Bun runtime and its divergences from Pi. Full design notes and the 11 breaking-change fixes live in
-[`.docs/DESIGN.md`](./.docs/DESIGN.md).
+Bun runtime and its divergences from Pi. See [`CHANGELOG.md`](./docs/CHANGELOG.md) for release
+history.
 
-> **Status:** v0.1.0 — first usable release. Core pipeline verified end-to-end against a real
-> self-hosted Langfuse instance. npm publish / marketplace entry is a planned follow-up.
+> **Status:** v0.2.0 — accurate cost for paid models via the OMP catalog + real GLM-5 rates.
+> npm publish / marketplace entry is a planned follow-up.
 
 ---
 
