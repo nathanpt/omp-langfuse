@@ -5,7 +5,7 @@ making changes or cutting a release.
 
 ## Current state
 
-- **Version:** `0.3.2` (see `package.json` and `git describe --tags`)
+- **Version:** `0.3.3` (see `package.json` and `git describe --tags`)
 - **Repo:** `git@github.com:nathanpt/omp-langfuse.git`, default branch `master`
 - **Distribution:** Git-only OMP plugin (`omp install github:nathanpt/omp-langfuse#vX.Y.Z`). npm is
   not supported by omp's install surface.
@@ -36,6 +36,8 @@ Get to a working live probe in under two minutes.
    omp -e ./dist/index.js -p "use bash to run: echo hi"
    ```
    You should see `📊 Langfuse: Tracing enabled → <host>` at startup.
+   (Testing the *installed plugin* path instead? `omp install ./omp-langfuse` symlinks with no bun
+   needed; `omp install github:nathanpt/omp-langfuse#vX.Y.Z` requires `bun` in `$PATH`.)
 5. **Default test model** is whatever OMP is configured to use (this machine: `zai/glm-5.2`).
    glm-5.2 is zeroed in the catalog (subscription); cost comes from the bundled GLM-5 rate
    (`1.4 / 4.4 / 0.26` per Mtok) in `src/pricing.ts`.
@@ -67,7 +69,9 @@ runtime. The design notes and audits live in `.docs/` (gitignored, local-only); 
 
 3. **Distribution is Git-only.** Per the omp docs, the marketplace/install surface does not currently
    support npm sources. Do not add npm-publish tooling; it's a dead path. Users install via
-   `omp install github:nathanpt/omp-langfuse#<tag>`.
+   `omp install github:nathanpt/omp-langfuse#<tag>`. **A github-source install requires `bun` in
+   `$PATH`** (OMP runs a bun-based install step); the local-path install (`omp install ./dir`)
+   symlinks and needs no bun. The README documents this.
 
 4. **Cost is self-computed from token usage × a resolved price** (`src/pricing.ts`), never from host
    `usage.cost`. Price resolution precedence: config override → bundled exact → bundled family prefix

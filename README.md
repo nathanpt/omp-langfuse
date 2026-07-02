@@ -29,8 +29,21 @@ trusts host cost: cost is always recomputed from the populated token counts
 
 ## Install
 
-omp-langfuse is an OMP **plugin**. The published package includes the pre-built bundle, so there's
-no build step on install.
+omp-langfuse is an OMP **plugin**.
+
+### Prerequisite: bun
+
+**A GitHub-source install requires [`bun`](https://bun.sh) in `$PATH`.** OMP's github-source
+install path runs a build/install step (bun-based); without bun it fails with
+`Executable not found in $PATH: "bun"`.
+
+```bash
+# install bun if you don't have it
+curl -fsSL https://bun.sh/install | bash
+```
+
+The published package ships a pre-built `dist/index.js`, so once installed there is no build step
+at runtime — bun is only needed for the install step itself.
 
 **Install from GitHub:**
 
@@ -41,8 +54,8 @@ omp install github:nathanpt/omp-langfuse#v0.3.0
 Other equivalent sources:
 
 ```bash
-omp install https://github.com/nathanpt/omp-langfuse.git   # tracks default branch
-omp install ./omp-langfuse                                    # local clone / dev
+omp install https://github.com/nathanpt/omp-langfuse.git   # tracks default branch (needs bun)
+omp install ./omp-langfuse                                    # local clone / dev (symlinks; no bun needed)
 ```
 
 Confirm it loaded with `omp -p '/extensions'`; uninstall with `omp remove omp-langfuse`.

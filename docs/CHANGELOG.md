@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-02
+
+### Fixed
+- **Documented the `bun` prerequisite for GitHub-source installs.**
+  `omp install github:nathanpt/omp-langfuse#vX.Y.Z` runs a bun-based install step and fails with
+  `Executable not found in $PATH: "bun"` if bun is absent. The README now documents this
+  prerequisite (with the install command) and clarifies that the local-path install
+  (`omp install ./dir`) symlinks and needs no bun. Found via a full plugin-path audit against
+  v0.3.2, which also confirmed the installed-plugin trace tree, cost, error flagging, and scores
+  are equivalent to the `omp -e` extension path.
+
 ## [0.3.2] - 2026-07-02
 
 ### Changed
@@ -94,7 +105,8 @@ First usable release. Ported from
 - 43 unit tests. Live trace audit verified generation usage/cost, tool error flagging, and all
   trace-level scores on a multi-turn, multi-tool run against `glm-5.2`.
 
-[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.3
 [0.3.2]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.2
 [0.3.1]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.1
 [0.3.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.0

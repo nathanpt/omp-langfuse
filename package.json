@@ -1,6 +1,6 @@
 {
   "name": "omp-langfuse",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Langfuse observability extension for OMP (oh-my-pi). One trace per agent run with self-computed cost.",
   "type": "module",
   "main": "dist/index.js",
