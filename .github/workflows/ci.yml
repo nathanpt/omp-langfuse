@@ -21,10 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -45,10 +45,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -75,7 +75,7 @@ jobs:
           echo "OK: bundle is self-contained"
 
       - name: Upload bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist-bundle
           path: dist/index.js
@@ -83,37 +83,72 @@ jobs:
           retention-days: 14
 
   release:
-    name: Attach bundle to release
+    name: Publish bundle to release
     # Only on version tags. Belt-and-suspenders with the committed dist bundle:
-    # the source of truth for the build, the committed bundle keeps
+    # CI is the source of truth for the build; the committed bundle keeps
     # `omp install github:...#tag` working without an asset fetch.
+    # Release notes are extracted from the hand-written docs/CHANGELOG.md.
     needs: [verify, build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download bundle artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: dist-bundle
           path: dist
 
-      - name: Attach bundle to the release (create if missing)
+      - name: Extract release notes from docs/CHANGELOG.md
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # VERSION is the tag name with the leading 'v' stripped (v0.3.1 -> 0.3.1)
+          export VERSION="${VERSION#v}"
+          node <<'NODESCRIPT'
+            const fs = require("fs");
+            const version = process.env.VERSION;
+            const src = fs.readFileSync("docs/CHANGELOG.md", "utf8");
+            const lines = src.split(/\r?\n/);
+            const header = "## [" + version + "]";
+            const start = lines.findIndex(l => l.startsWith(header));
+            if (start === -1) {
+              console.error('::error::No "## [' + version + ']" section found in docs/CHANGELOG.md');
+              process.exit(1);
+            }
+            const body = [];
+            for (let i = start + 1; i < lines.length; i++) {
+              if (lines[i].startsWith("## ")) break;
+              body.push(lines[i]);
+            }
+            const trimmed = body.join("\n").replace(/^\n+|\n+$/g, "");
+            if (!trimmed) {
+              console.error("::error::CHANGELOG section for " + version + " is empty");
+              process.exit(1);
+            }
+            fs.writeFileSync("release-notes.md", trimmed);
+            console.log("Extracted " + trimmed.length + " chars of release notes for " + version);
+          NODESCRIPT
+          echo "--- notes preview ---"
+          cat release-notes.md
+
+      - name: Create or update release with notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF#refs/tags/}"
-          # Create the release if it doesn't exist yet, then attach the bundle.
-          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $tag does not exist; creating it."
+          tag="${{ github.ref_name }}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+          else
             gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$tag" \
-              --generate-notes \
+              --notes-file release-notes.md \
               --latest
           fi
           gh release upload "$tag" dist/index.js --clobber --repo "$GITHUB_REPOSITORY"
-          echo "Attached dist/index.js to $tag"
+          echo "Published hand-written notes + bundle to $tag"
