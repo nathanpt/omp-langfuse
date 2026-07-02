@@ -6,15 +6,15 @@
  * - one generation observation per provider request
  * - one tool observation per tool call, keyed by toolCallId
  *
- * Ported from pi-langfuse (https://github.com/gooyoung/pi-langfuse). See
- * .docs/DESIGN.md for the OMP adaptation notes and the full breaking-change
- * table. Cost is self-computed from token usage (src/pricing.ts) and is never
- * trusted from the host's zeroed `usage.cost` (design §8.1).
+ * Ported from pi-langfuse (https://github.com/gooyoung/pi-langfuse). Cost is
+ * self-computed from token usage (src/pricing.ts) and is never trusted from
+ * the host's zeroed `usage.cost` (OMP zeroes it for subscription/free-tier
+ * models).
  */
 
 import { basename } from "node:path";
 // ExtensionAPI is NOT exported from the package root (wildcard re-export
-// collision); import from the deep subpath. (design §10, gate 5)
+// collision); import from the deep subpath.
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
 
 import { state, resetRunState, runWithSession, setCurrentSession } from "./src/state.js";
@@ -87,8 +87,8 @@ export default async function (pi: ExtensionAPI) {
 
   const getSessionId = (ctx?: any) => {
     // ctx.sessionManager.getSessionFile() returns undefined in ephemeral
-    // (--no-session) mode (design §10). Fall back to an empty id; the session
-    // scope still isolates state per active run.
+    // (--no-session) mode. Fall back to an empty id; the session scope still
+    // isolates state per active run.
     try {
       const sessionFile = ctx?.sessionManager?.getSessionFile?.();
       return sessionFile ? basename(sessionFile, ".jsonl") : undefined;

@@ -17,7 +17,7 @@ import type { GenerationState, ObservationUpdate } from "../types.js";
 import { applyCapturePolicy } from "../capture-policy.js";
 
 /**
- * Self-compute generation cost from token usage × resolved price (design §8.1).
+ * Self-compute generation cost from token usage × resolved price.
  * Never trusts host `usage.cost` (zeroed for subscription models). Returns undefined
  * when no price resolves for the model (warns once).
  */

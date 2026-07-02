@@ -1,5 +1,5 @@
 /**
- * Self-sourced per-token pricing + cost computation (design §8.1, breaking change #7).
+ * Self-sourced per-token pricing + cost computation.
  *
  * OMP's host-reported `message.usage.cost` is computed from the model registry's
  * rates, which are zeroed for subscription / free-tier models (e.g. glm-5.2 returns
@@ -63,7 +63,7 @@ export interface UsageTokens {
  *
  * Prices sourced from provider listings dated 2026-07. Model pricing drifts — the
  * one-time "no price for model" warning + per-model config overrides are the
- * intended correction path (design §8.1).
+ * intended correction path.
  */
 const BUNDLED_EXACT: Record<string, TokenPrice> = {
   // DeepSeek (official API)
@@ -229,7 +229,7 @@ export function warnOnceNoPrice(modelId: string): void {
   }
   warnedNoPrice.add(id);
   console.warn(
-    `📊 Langfuse: no bundled price for model "${modelId}"; cost omitted. Add an override in ~/.omp/agent/omp-langfuse/config.json under "pricing" (see design §7.4).`,
+    `📊 Langfuse: no bundled price for model "${modelId}"; cost omitted. Add an override in ~/.omp/agent/omp-langfuse/config.json under "pricing".`,
   );
 }
 
