@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # release job needs this to attach assets
+
+jobs:
+  verify:
+    name: Typecheck + Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+  build:
+    name: Build bundle
+    # Build on every CI run so we catch bundle regressions early, and so the
+    # artifact is available for the release job on tag pushes.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify bundle is self-contained
+        run: |
+          set -euo pipefail
+          # The esbuild bundle must not retain any bare/package imports —
+          # OMP loads it from the plugin set without a resolver.
+          leak=$(grep -oE 'from "[^"]+"' dist/index.js \
+            | grep -vE '"(node:)?(fs|path|os|crypto|child_process|stream|events|util|url|buffer|http|https|net|tls|zlib|string_decoder|tty|dns|worker_threads|async_hooks|perf_hooks|inspector|v8|vm|timers|assert|readline|module|process|querystring)"' \
+            | sort -u || true)
+          if [ -n "$leak" ]; then
+            echo "::error::Bundle contains non-builtin imports (would break plugin load):"
+            echo "$leak"
+            exit 1
+          fi
+          echo "OK: bundle is self-contained"
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-bundle
+          path: dist/index.js
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Attach bundle to release
+    # Only on version tags. Belt-and-suspenders with the committed dist bundle:
+    # the source of truth for the build, the committed bundle keeps
+    # `omp install github:...#tag` working without an asset fetch.
+    needs: [verify, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-bundle
+          path: dist
+
+      - name: Attach bundle to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release upload "$tag" dist/index.js --clobber --repo "$GITHUB_REPOSITORY"
+          echo "Attached dist/index.js to $tag"
