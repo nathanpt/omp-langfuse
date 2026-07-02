@@ -146,6 +146,8 @@ non-breaking), or major (breaking change).
 4. **Verify locally**: `npm run typecheck && npm test` (and a live Langfuse run if trace/pricing
    code changed).
 5. **Commit** all of the above (`package.json`, `docs/CHANGELOG.md`, `dist/index.js`, any source).
+   Also bump the install tag in `README.md` (`omp install github:nathanpt/omp-langfuse#vX.Y.Z`) and,
+   if the story warrants, the `> **Status:**` line — these drift otherwise.
 6. **Tag**: `git tag -a vX.Y.Z -m "vX.Y.Z — <one-line headline>"`.
 7. **Push**: `git push origin master && git push origin vX.Y.Z`.
 8. **CI does the rest**: typecheck + test + build → creates the GitHub Release with your hand-written

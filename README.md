@@ -12,8 +12,9 @@ Ported from [`pi-langfuse`](https://github.com/gooyoung/pi-langfuse) (v1.5.6) an
 Bun runtime and its divergences from Pi. See [`CHANGELOG.md`](./docs/CHANGELOG.md) for release
 history.
 
-> **Status:** v0.2.0 — accurate cost for paid models via the OMP catalog + real GLM-5 rates.
-> npm publish / marketplace entry is a planned follow-up.
+> **Status:** v0.3.3 — installable as an OMP plugin via Git, with self-computed cost accurate for
+> paid models (via the OMP catalog) and for subscription models (researched rates). npm publish is
+> not supported by OMP's install surface, so Git is the distribution path.
 
 ---
 
@@ -48,8 +49,11 @@ at runtime — bun is only needed for the install step itself.
 **Install from GitHub:**
 
 ```bash
-omp install github:nathanpt/omp-langfuse#v0.3.0
+omp install github:nathanpt/omp-langfuse#v0.3.3
 ```
+
+(See the [releases](https://github.com/nathanpt/omp-langfuse/releases) page for the latest tag;
+drop the `#tag` to track the default branch.)
 
 Other equivalent sources:
 
@@ -110,7 +114,7 @@ prompts for your keys. In headless mode, set the env vars or write the file by h
 
   // Optional: per-model pricing overrides (USD per 1M tokens)
   "pricing": {
-    "glm-5.2": { "input": 0.43, "output": 1.74, "cacheRead": 0.08 }
+    "glm-5.2": { "input": 1.4, "output": 4.4, "cacheRead": 0.26 }
   }
 }
 ```
@@ -224,12 +228,13 @@ any directory up to the git root). Recognized keys: `repo_identity`, `repo_owner
 
 | Observation | Type | One per | Notes |
 | --- | --- | --- | --- |
-| `omp-agent` | agent | agent run | Root. Input = user prompt; output = final assistant response. |
-| `omp-langfuse-generation` | generation | provider request | Usage + self-computed cost. |
-| tool name | span/event | tool call | Marked `level=ERROR` / `isError` on failure. |
+| `omp-agent` | agent | agent run | Root. Input = user prompt; output = final assistant response. Trace name is also `omp-agent`. |
+| `llm-generation` | generation | provider request | Usage + self-computed cost. |
+| `turn` | span | agent turn | Wraps the generations and tool calls within a turn. |
+| *(tool name)* | tool | tool call | Marked `level=ERROR` / `isError=true` on failure (including non-zero bash exits). |
 | `session_compact` | span | context compaction | Recorded when the context window is compacted. |
 
-**Trace name** is `omp-agent`.
+**Trace name** is `omp-agent` (also the name of the root agent observation).
 
 **Trace-level scores** (attached to the trace at `agent_end`):
 
@@ -282,6 +287,10 @@ src/
   commands.ts             /langfuse-* command handlers
   constants.ts            config paths, limits, defaults
 test/                     unit tests (npm test)
+dist/index.js             COMMITTED pre-built bundle (what OMP loads from a Git-source install)
+docs/CHANGELOG.md         release history (source of truth for release notes)
+AGENTS.md                 operating manual for agents + the release workflow
+.github/workflows/ci.yml  CI: typecheck + test + build; releases on tag
 ```
 
 ---
