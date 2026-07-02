@@ -1,0 +1,287 @@
+/**
+ * omp-langfuse — Langfuse observability extension for OMP (oh-my-pi).
+ *
+ * Sends one complete Langfuse trace per OMP agent run:
+ * - root agent observation for the user prompt and final assistant response
+ * - one generation observation per provider request
+ * - one tool observation per tool call, keyed by toolCallId
+ *
+ * Ported from pi-langfuse (https://github.com/gooyoung/pi-langfuse). See
+ * .docs/DESIGN.md for the OMP adaptation notes and the full breaking-change
+ * table. Cost is self-computed from token usage (src/pricing.ts) and is never
+ * trusted from the host's zeroed `usage.cost` (design §8.1).
+ */
+
+import { basename } from "node:path";
+// ExtensionAPI is NOT exported from the package root (wildcard re-export
+// collision); import from the deep subpath. (design §10, gate 5)
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
+
+import { state, resetRunState, runWithSession, setCurrentSession } from "./src/state.js";
+import { ensureConfig, promptForConfig, loadConfig } from "./src/config.js";
+import { shutdownRuntime } from "./src/langfuse.js";
+import {
+  handleLangfusePrivacyCommand,
+  handleLangfuseStatusCommand,
+  handleLangfuseTestCommand,
+} from "./src/commands.js";
+import { getMessageFromEvent, extractAssistantOutput, getCapturePolicy } from "./src/utils.js";
+import { applyCapturePolicy } from "./src/capture-policy.js";
+import { startAgentRun, finishAgentRun } from "./src/handlers/agent.js";
+import { startTurnObservation, finishTurnObservation } from "./src/handlers/turn.js";
+import {
+  startGeneration,
+  updateGenerationMetadata,
+  finishGenerationFromMessage,
+  createFallbackGenerationFromTurn,
+  recordTTFT,
+} from "./src/handlers/generation.js";
+import {
+  startToolObservation,
+  finishToolObservation,
+  closeDanglingObservations,
+} from "./src/handlers/tool.js";
+
+// ============================================
+// Extension
+// ============================================
+
+export default async function (pi: ExtensionAPI) {
+  if (!state.config) {
+    state.config = loadConfig();
+  }
+
+  if (state.config) {
+    console.log("📊 Langfuse: Tracing enabled →", state.config.host);
+  } else {
+    console.log("📊 Langfuse: Waiting for first-run setup");
+  }
+
+  pi.registerCommand("langfuse-setup", {
+    description: "Configure Langfuse API keys for this extension",
+    handler: async (_args, ctx) => {
+      await promptForConfig(ctx);
+    },
+  });
+
+  pi.registerCommand("langfuse-test", {
+    description: "Send a test trace to Langfuse to verify configuration",
+    handler: async (args, ctx) => {
+      await handleLangfuseTestCommand(String(args ?? ""), ctx);
+    },
+  });
+
+  pi.registerCommand("langfuse-status", {
+    description: "Show Langfuse configuration and runtime status",
+    handler: async (args, ctx) => {
+      await handleLangfuseStatusCommand(String(args ?? ""), ctx);
+    },
+  });
+
+  pi.registerCommand("langfuse-privacy", {
+    description: "View or set Langfuse telemetry privacy preset",
+    handler: async (args, ctx) => {
+      await handleLangfusePrivacyCommand(String(args ?? ""), ctx);
+    },
+  });
+
+  const getSessionId = (ctx?: any) => {
+    // ctx.sessionManager.getSessionFile() returns undefined in ephemeral
+    // (--no-session) mode (design §10). Fall back to an empty id; the session
+    // scope still isolates state per active run.
+    try {
+      const sessionFile = ctx?.sessionManager?.getSessionFile?.();
+      return sessionFile ? basename(sessionFile, ".jsonl") : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const withSession = <T>(ctx: any, fn: () => T): T =>
+    runWithSession(getSessionId(ctx) ?? state.currentSessionId, fn);
+
+  // Capture model identity + per-token cost from ctx.model. (Breaking change #1:
+  // OMP removed the `model_select` event, so the model is read from ctx.model at
+  // agent start instead.)
+  const captureModel = (ctx: any) => {
+    const model = ctx?.model;
+    if (!model) {
+      return;
+    }
+    if (model.id) {
+      state.currentModel = String(model.id);
+    }
+    if (model.provider) {
+      state.currentProvider = String(model.provider);
+    }
+    // ctx.model.cost is PER-TOKEN (see src/pricing.ts); resolvePrice converts it.
+    if (model.cost && typeof model.cost === "object") {
+      state.currentModelCost = model.cost as Record<string, number>;
+    }
+  };
+
+  pi.on("session_start", async (_event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      state.setupAttemptedThisSession = false;
+      await ensureConfig(ctx);
+      resetRunState();
+    }),
+  );
+
+  pi.on("before_agent_start", async (_event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      captureModel(ctx);
+      await startAgentRun(_event, ctx);
+    }),
+  );
+
+  pi.on("agent_start", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      if (!state.agentState?.root) {
+        captureModel(ctx);
+        await startAgentRun(event, ctx);
+      }
+    }),
+  );
+
+  pi.on("turn_start", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      captureModel(ctx);
+      await startTurnObservation(event);
+    }),
+  );
+
+  pi.on("before_provider_request", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      await startGeneration(event);
+    }),
+  );
+
+  pi.on("after_provider_response", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      updateGenerationMetadata(event);
+    }),
+  );
+
+  pi.on("message_update", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      recordTTFT(event);
+      const message = getMessageFromEvent(event);
+      if (message?.role === "assistant" && state.agentState) {
+        state.agentState.latestAssistantOutput = extractAssistantOutput(message);
+      }
+    }),
+  );
+
+  pi.on("message_end", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      await finishGenerationFromMessage(event);
+    }),
+  );
+
+  pi.on("tool_execution_start", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      await startToolObservation(event);
+    }),
+  );
+
+  pi.on("tool_call", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      await startToolObservation(event);
+    }),
+  );
+
+  pi.on("tool_result", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      await finishToolObservation(event);
+    }),
+  );
+
+  pi.on("tool_execution_end", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      await finishToolObservation(event);
+    }),
+  );
+
+  pi.on("turn_end", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      state.turnCount++;
+      const message = getMessageFromEvent(event);
+      if (message?.role === "assistant") {
+        await createFallbackGenerationFromTurn(event, message);
+        await finishGenerationFromMessage(event);
+      }
+      finishTurnObservation(event);
+    }),
+  );
+
+  pi.on("agent_end", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      await finishAgentRun(event);
+      const sessionId = state.currentSessionId;
+      setTimeout(() => {
+        shutdownRuntime(sessionId).catch((error) => {
+          console.warn("📊 Langfuse: Deferred shutdown failed", error);
+        });
+      }, 0);
+    }),
+  );
+
+  const handleSessionInterruption = (reason: string) => {
+    if (state.agentState?.root) {
+      closeDanglingObservations(reason);
+      state.agentState.root.update({ metadata: { completed: false, cancelled: true } }).end();
+    }
+    resetRunState();
+  };
+
+  // Breaking change #2: `session_before_fork` was renamed to
+  // `session_before_branch` in OMP.
+  pi.on("session_before_switch", async (_event: any, ctx: any) => {
+    const sessionId = getSessionId(ctx);
+    if (sessionId) {
+      setCurrentSession(sessionId);
+    }
+  });
+
+  pi.on("session_before_branch", async (_event: any, ctx: any) => {
+    const sessionId = getSessionId(ctx);
+    if (sessionId) {
+      setCurrentSession(sessionId);
+    }
+  });
+
+  pi.on("session_compact", async (event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      if (state.agentState?.root) {
+        const parent = state.agentState.activeTurn ?? state.agentState.root;
+        try {
+          const observation = parent.startObservation
+            ? parent.startObservation(
+                "session_compact",
+                {
+                  level: "DEFAULT",
+                  statusMessage: "Context was compacted",
+                  metadata: applyCapturePolicy(
+                    { metadata: { ...event } },
+                    getCapturePolicy(),
+                  ).metadata,
+                },
+                { asType: "span" },
+              )
+            : undefined;
+          observation?.end();
+        } catch {
+          // ignore
+        }
+      }
+    }),
+  );
+
+  pi.on("session_shutdown", async (_event: any, ctx: any) =>
+    withSession(ctx, async () => {
+      handleSessionInterruption("Session shutdown before agent completed");
+      await shutdownRuntime();
+    }),
+  );
+}
