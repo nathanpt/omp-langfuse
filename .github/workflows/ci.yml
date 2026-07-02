@@ -100,10 +100,20 @@ jobs:
           name: dist-bundle
           path: dist
 
-      - name: Attach bundle to the release
+      - name: Attach bundle to the release (create if missing)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           tag="${GITHUB_REF#refs/tags/}"
+          # Create the release if it doesn't exist yet, then attach the bundle.
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag does not exist; creating it."
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$tag" \
+              --generate-notes \
+              --latest
+          fi
           gh release upload "$tag" dist/index.js --clobber --repo "$GITHUB_REPOSITORY"
           echo "Attached dist/index.js to $tag"
