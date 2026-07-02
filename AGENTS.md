@@ -3,6 +3,46 @@
 Operating manual for AI coding agents (and humans) working on omp-langfuse. Read this before
 making changes or cutting a release.
 
+## Current state
+
+- **Version:** `0.3.2` (see `package.json` and `git describe --tags`)
+- **Repo:** `git@github.com:nathanpt/omp-langfuse.git`, default branch `master`
+- **Distribution:** Git-only OMP plugin (`omp install github:nathanpt/omp-langfuse#vX.Y.Z`). npm is
+  not supported by omp's install surface.
+- **CI:** `.github/workflows/ci.yml` — typecheck + tests + build on PRs/master; on `v*` tags it
+  builds `dist/index.js`, extracts the matching `docs/CHANGELOG.md` section, and creates the GitHub
+  Release.
+- **Shipped so far:** v0.1.0 (first usable), v0.2.0 (accurate cost via catalog + real GLM-5 rates),
+  v0.3.0 (installable as a plugin), v0.3.1/v0.3.2 (CI).
+- **Open (optional):** marketplace catalog repo; optional Langfuse CLI skill.
+
+> Update this block when you tag a release.
+
+## Quick start for a fresh session
+
+Get to a working live probe in under two minutes.
+
+1. **Install deps + build the bundle:**
+   ```bash
+   npm install && npm run build
+   ```
+2. **Confirm quality gates:** `npm run typecheck && npm test` (must stay clean).
+3. **Live credentials live outside the repo** at `~/.omp/agent/omp-langfuse/config.json` (0600), or
+   as env vars `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL`. If that file is
+   absent, the extension's first-run UI prompt will create it; in headless mode set the env vars.
+   Do **not** commit credentials — the repo is public.
+4. **Run a one-shot trace probe** (reads creds from the config file above):
+   ```bash
+   omp -e ./dist/index.js -p "use bash to run: echo hi"
+   ```
+   You should see `📊 Langfuse: Tracing enabled → <host>` at startup.
+5. **Default test model** is whatever OMP is configured to use (this machine: `zai/glm-5.2`).
+   glm-5.2 is zeroed in the catalog (subscription); cost comes from the bundled GLM-5 rate
+   (`1.4 / 4.4 / 0.26` per Mtok) in `src/pricing.ts`.
+
+For a full trace audit (multi-turn, multi-tool, with an intentional failure), see **Verification**
+below.
+
 ## What this is
 
 omp-langfuse is a Langfuse observability **plugin** for [OMP](https://omp.sh) (oh-my-pi). It sends
