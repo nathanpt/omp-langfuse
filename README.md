@@ -151,27 +151,28 @@ objects 80 keys).
 omp-langfuse resolves a per-token price per message with this precedence (first match wins):
 
 1. **user config override** (exact model id, case-insensitive) — `config.pricing`
-2. **bundled table** (exact id)
-3. **bundled table** (longest family prefix) — e.g. `glm-5.2` → `glm`
-4. **registry rate** (`ctx.model.cost`) — only if all fields are non-zero
+2. **bundled table** (exact id) — subscription/free-tier models the catalog zeroes
+3. **bundled table** (longest family prefix)
+4. **catalog rate** (`ctx.model.cost` from `@oh-my-pi/pi-catalog`, already $/Mtok) —
+   authoritative for paid models; used directly with no conversion
 5. none → cost is omitted, and a one-time warning is emitted per model
 
-Rates are USD per 1,000,000 tokens (how providers publish them). Override any model by adding it to
-`config.pricing`:
+Paid models (OpenAI, Anthropic, Google, DeepSeek, …) are priced automatically from the OMP model
+catalog at runtime — no bundled entries needed for them. The bundled table only covers models the
+catalog deliberately zeroes because they're billed via subscription (e.g. **Zhipu GLM-5.x**); those
+rates are researched from the provider's API listings. Rates are USD per 1,000,000 tokens.
 
 ```jsonc
 {
   "pricing": {
-    "glm-5.2":  { "input": 0.43, "output": 1.74, "cacheRead": 0.08 },
+    "glm-5.2":  { "input": 1.4, "output": 4.4, "cacheRead": 0.26 },
     "my-model": { "input": 1.0, "output": 3.0 }
   }
 }
 ```
 
-`cacheWrite` is optional and defaults to `0` (populated mainly for Anthropic).
-
-The bundled table is a **starter set** of estimates; some families (notably GLM 5.x) inherit a
-family-prefix rate and should be overridden for accuracy. Pricing drifts over time.
+`cacheWrite` is optional and defaults to `0` (populated mainly for Anthropic). Pricing drifts over
+time — for subscription models whose bundled rate falls out of date, override via `config.pricing`.
 
 ---
 

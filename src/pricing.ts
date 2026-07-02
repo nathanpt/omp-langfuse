@@ -11,8 +11,14 @@
  *   1. user config override (exact id)        — state.config.pricing
  *   2. bundled table (exact id)
  *   3. bundled table (longest family prefix)  — e.g. "glm-5.2" -> "glm"
- *   4. registry rate (ctx.model.cost)         — only if all fields non-zero
+ *   4. registry rate (ctx.model.cost)         — catalog entry, already $/Mtok;
+ *                                              only when input+output non-zero
  *   5. none -> omit cost, warn once per model
+ *
+ * The bundled table covers only models the host registry zeroes (subscription /
+ * free-tier, e.g. Zhipu GLM-5.x) where external rates must be sourced by hand.
+ * All paid models are priced accurately via step 4 from the OMP model catalog
+ * (@oh-my-pi/pi-catalog), whose `cost` fields are documented as $/million tokens.
  *
  * Rates are USD per 1_000_000 tokens (how providers publish them); divided by
  * PRICE_PER_MILLION at compute time.
@@ -66,9 +72,15 @@ const BUNDLED_EXACT: Record<string, TokenPrice> = {
   "deepseek-chat": f(0.27, 1.1, 0.07),
   "deepseek-r1": f(0.55, 2.19, 0.14),
   "deepseek-reasoner": f(0.55, 2.19, 0.14),
-  // Zhipu GLM (sourced from Deep Infra / OpenRouter listings)
+  // Zhipu GLM-4.6 (sourced from Deep Infra / OpenRouter listings)
   "glm-4.6": f(0.43, 1.74, 0.08),
   "glm-4-32b": f(0.43, 1.74, 0.08),
+  // Zhipu GLM-5.x (catalog zeroes these as subscription models; API rates
+  // sourced from Z.ai / bigmodel.cn listings, corroborated by the catalog's own
+  // coreweave GLM-5.1 entry). cacheWrite is not published for GLM (0).
+  "glm-5": f(1.4, 4.4, 0.26),
+  "glm-5.1": f(1.4, 4.4, 0.26),
+  "glm-5.2": f(1.4, 4.4, 0.26),
   // Anthropic Claude
   "claude-sonnet-4": f(3, 15, 0.3, 3.75),
   "claude-3-5-sonnet": f(3, 15, 0.3, 3.75),
@@ -92,8 +104,8 @@ const BUNDLED_EXACT: Record<string, TokenPrice> = {
  * Used as *estimates* — override in config for accuracy.
  */
 const BUNDLED_FAMILY: Array<{ prefix: string; price: TokenPrice }> = [
-  // GLM: glm-5.x inherits the GLM-4.6 family rate as an estimate (override recommended).
-  { prefix: "glm", price: f(0.43, 1.74, 0.08) },
+  // GLM-5.x family rate (current generation; GLM-4.6 has its own exact entry above).
+  { prefix: "glm", price: f(1.4, 4.4, 0.26) },
   { prefix: "deepseek", price: f(0.27, 1.1, 0.07) },
   { prefix: "claude-sonnet", price: f(3, 15, 0.3, 3.75) },
   { prefix: "claude-haiku", price: f(1, 5, 0.1, 1.25) },
@@ -151,17 +163,20 @@ export function resolvePrice(
     return familyMatch.price;
   }
 
-  // 4. registry rate (ctx.model.cost is PER-TOKEN; convert to per-Mtok to match the table).
+  // 4. registry rate (ctx.model.cost is the OMP catalog entry, already $/Mtok —
+  //    per the @oh-my-pi/pi-catalog Model.cost type def). Use it directly; no
+  //    unit conversion. Only when input+output are non-zero (subscription / free
+  //    models are zeroed in the catalog and must be priced via the table above).
   if (
     registryRate &&
     (registryRate.input ?? 0) > 0 &&
     (registryRate.output ?? 0) > 0
   ) {
     return f(
-      (registryRate.input ?? 0) * PRICE_PER_MILLION,
-      (registryRate.output ?? 0) * PRICE_PER_MILLION,
-      (registryRate.cacheRead ?? 0) * PRICE_PER_MILLION,
-      (registryRate.cacheWrite ?? 0) * PRICE_PER_MILLION,
+      registryRate.input ?? 0,
+      registryRate.output ?? 0,
+      registryRate.cacheRead ?? 0,
+      registryRate.cacheWrite ?? 0,
     );
   }
 

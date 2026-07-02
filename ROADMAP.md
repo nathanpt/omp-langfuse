@@ -59,9 +59,13 @@ marketplace entry deferred to a follow-up (open Q3 — name/scope ownership).
   generation usage/cost, tool `isError`/`level=ERROR` (incl. non-zero bash exits — bug found & fixed),
   and all trace-level scores on a multi-turn, multi-tool run against `glm-5.2`.
 - ✅ **Package metadata + version bump** — `version: "0.1.0"`, description corrected.
-- ⬜ **Pricing rates refinement** — pin real per-Mtok rates for models you care about (esp.
-  `glm-5.2`, currently using the GLM family estimate `0.43 / 1.74 / 0.08`) via `config.pricing` or
-  updates to the bundled table in `src/pricing.ts`.
+- ✅ **Pricing rates refinement** — replaced the GLM family estimate with real Zhipu
+  API rates for GLM-5.x (`1.4 / 4.4 / 0.26` per Mtok, corroborated by the catalog's own GLM-5.1
+  entry). Fixed a latent off-by-1,000,000× bug: the registry fallback now treats
+  `ctx.model.cost` as the `$/Mtok` catalog value it is (per `@oh-my-pi/pi-catalog`'s `Model.cost`
+  type def) instead of converting per-token → per-Mtok. All 1,968 paid models in the catalog are
+  now priced accurately at runtime via the registry path; the bundled table covers only
+  subscription/zeroed models (GLM). Live-verified on `glm-5.2`.
 - ⬜ **Optional Langfuse CLI skill** — decide whether to ship the `.agents/skills/langfuse` bundle
   (moved under OMP's `skills/` convention per the authoring doc).
 - ⬜ **Marketplace catalog entry** + **npm publish** as `omp-langfuse` (confirm name/scope ownership;
