@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-02
+
+### Added
+- **Installable as an OMP plugin.** `omp install github:nathanpt/omp-langfuse#v0.3.0` now works.
+The pre-built bundle (`dist/index.js`) is committed so a Git-source install loads immediately
+with no toolchain on the user's machine. README install instructions updated.
+
+### Changed
+- Distribution model clarified: per the omp docs, the marketplace/install surface does not
+  currently support npm sources, so omp-langfuse is distributed via Git (not npm). The package was
+  already shaped correctly as a plugin (`omp.extensions` manifest + factory module) — no trace or
+  handler logic changed. The `dist/` bundle is no longer gitignored.
+
 ## [0.2.0] - 2026-07-02
 
 ### Fixed
@@ -64,6 +77,7 @@ First usable release. Ported from
 - 43 unit tests. Live trace audit verified generation usage/cost, tool error flagging, and all
   trace-level scores on a multi-turn, multi-tool run against `glm-5.2`.
 
-[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.1.0

@@ -29,17 +29,34 @@ trusts host cost: cost is always recomputed from the populated token counts
 
 ## Install
 
-omp-langfuse runs as an OMP extension. OMP loads the pre-built bundle, so you don't need to build
-anything at runtime, but the package ships TypeScript source.
+omp-langfuse is an OMP **plugin**. The published package includes the pre-built bundle, so there's
+no build step on install.
+
+**Install from GitHub:**
 
 ```bash
-git clone <this repo> omp-langfuse
-cd omp-langfuse
-npm install
-npm run build        # bundles index.ts -> dist/index.js (what OMP loads)
+omp install github:nathanpt/omp-langfuse#v0.3.0
 ```
 
-Then run OMP with the extension enabled:
+Other equivalent sources:
+
+```bash
+omp install https://github.com/nathanpt/omp-langfuse.git   # tracks default branch
+omp install ./omp-langfuse                                    # local clone / dev
+```
+
+Confirm it loaded with `omp -p '/extensions'`; uninstall with `omp remove omp-langfuse`.
+
+> OMP's marketplace/install surface does **not** currently support npm sources (per the omp docs),
+> so omp-langfuse is distributed via Git, not npm.
+
+### Run it
+
+Once installed, the extension loads automatically on every OMP session and you'll see
+`📊 Langfuse: Tracing enabled → <host>` at startup. Slash commands (`/langfuse-setup`, etc.) are
+registered automatically. See [Configure](#configure) for first-run setup.
+
+For development / one-shot runs without installing:
 
 ```bash
 omp -e ./dist/index.js -p "your prompt"
@@ -50,8 +67,8 @@ omp -e ./dist/index.js -p "your prompt"
 ```bash
 npm run typecheck    # tsc --noEmit against OMP types
 npm test             # unit tests
-npm run build        # esbuild bundle -> dist/index.js
-omp -e ./dist/index.js -p "..."   # run against a live OMP
+npm run build        # esbuild bundle -> dist/index.js (committed for installs)
+omp -e ./dist/index.js -p "..."   # one-shot run against a live OMP
 ```
 
 ---
