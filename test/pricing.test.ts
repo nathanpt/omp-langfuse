@@ -23,32 +23,42 @@ test("resolvePrice matches a bundled exact id (case-insensitive)", () => {
   assert.equal(price?.cacheRead, 0.07);
 });
 
-test("resolvePrice falls back to a family prefix for unknown variants", () => {
-  // glm-5.2 is not in the exact table; it inherits the GLM family rate.
+test("resolvePrice matches GLM-5.x with the real Zhipu API rate", () => {
+  // GLM-5.x is zeroed in the catalog (subscription); the bundled exact entry
+  // carries the researched Z.ai API rate ($1.40 / $4.40 / $0.26 per Mtok).
   const price = resolvePrice("glm-5.2");
-  assert.equal(price?.input, 0.43);
-  assert.equal(price?.output, 1.74);
+  assert.equal(price?.input, 1.4);
+  assert.equal(price?.output, 4.4);
+  assert.equal(price?.cacheRead, 0.26);
 });
 
-test("resolvePrice uses registry (per-token) rate only when input+output are non-zero", () => {
-  // Per-token registry rate must be converted to per-Mtok.
-  const fromRegistry = resolvePrice("some-unknown-model", undefined, {
-    input: 0.000002,
-    output: 0.000008,
-    cacheRead: 0,
+test("resolvePrice keeps the distinct GLM-4.6 rate for that generation", () => {
+  const price = resolvePrice("glm-4.6");
+  assert.equal(price?.input, 0.43);
+  assert.equal(price?.output, 1.74);
+  assert.equal(price?.cacheRead, 0.08);
+});
+
+test("resolvePrice uses the registry (catalog) rate directly — it is already $/Mtok", () => {
+  // ctx.model.cost comes from @oh-my-pi/pi-catalog, whose Model.cost is
+  // documented as $/million tokens. It must NOT be re-converted.
+  const fromRegistry = resolvePrice("some-unknown-paid-model", undefined, {
+    input: 2,
+    output: 8,
+    cacheRead: 0.5,
     cacheWrite: 0,
   });
-  assert.deepEqual(fromRegistry, { input: 2, output: 8, cacheRead: 0, cacheWrite: 0 });
+  assert.deepEqual(fromRegistry, { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0 });
 
-  // Zeroed registry rate (subscription model) is ignored.
+  // Zeroed registry rate (subscription model) is ignored, falling through to
+  // the bundled table.
   const ignored = resolvePrice("glm-5.2", undefined, {
     input: 0,
     output: 0,
     cacheRead: 0,
     cacheWrite: 0,
   });
-  // Falls back to bundled family, NOT the zeroed registry rate.
-  assert.equal(ignored?.input, 0.43);
+  assert.equal(ignored?.input, 1.4);
 });
 
 test("resolvePrice returns undefined for a model with no resolvable price", () => {
