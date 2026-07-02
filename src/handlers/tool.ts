@@ -77,7 +77,14 @@ export async function finishToolObservation(event: Record<string, unknown>) {
     return;
   }
 
-  const isError = Boolean(event.isError ?? event.error ?? event.status === "error");
+  const details = event.details as { exitCode?: number } | undefined;
+  // OMP reports a bash command that ran to completion but exited non-zero via
+  // `event.details.exitCode` while leaving `event.isError` false (the tool
+  // itself executed fine). Treat a non-zero exit code as a tool error so it is
+  // flagged in Langfuse and counted toward the trace error scores.
+  const nonZeroExit = typeof details?.exitCode === "number" && details.exitCode !== 0;
+  const isError = Boolean(event.isError || event.error || event.status === "error" || nonZeroExit);
+  const exitCode = nonZeroExit ? details!.exitCode : undefined;
   const output =
     extractTextContent(event.content, MAX_TOOL_PAYLOAD_LENGTH) ??
     event.output ??
@@ -106,7 +113,9 @@ export async function finishToolObservation(event: Record<string, unknown>) {
       .update({
         output: captured.toolOutput,
         level: isError ? "ERROR" : "DEFAULT",
-        statusMessage: isError ? redactString(truncate(String(event.error ?? output), 1_000)) : undefined,
+        statusMessage: isError
+          ? redactString(truncate(String(event.error ?? (exitCode !== undefined ? `Command exited with code ${exitCode}` : output)), 1_000))
+          : undefined,
         metadata: {
           ...(captured.metadata ?? {}),
           durationMs,

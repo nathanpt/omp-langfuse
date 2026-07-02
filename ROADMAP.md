@@ -46,22 +46,26 @@ Port pi-langfuse to OMP, self-compute cost, and make it runnable on Bun.
 
 ---
 
-## ⬜ Phase 4 — Polish & publish
+## 🟡 Phase 4 — Polish & publish
 
-The only remaining phase. Roughly in order:
+Partially complete. v0.1.0 release-ready (package + docs + verified audit); `npm publish` /
+marketplace entry deferred to a follow-up (open Q3 — name/scope ownership).
 
-- ⬜ **README** — OMP install/usage (CLI is `omp`, config dir `~/.omp/agent/omp-langfuse/`, run via
-  the bundle), configuration (incl. `pricing` overrides), privacy presets, troubleshooting.
+- ✅ **README** — OMP install/usage (`omp` CLI, `~/.omp/agent/omp-langfuse/` config dir, run via
+  the bundle), configuration (incl. `pricing` overrides), privacy presets, source/git metadata,
+  trace model, troubleshooting. Resolved open Q4 (`omp-agent` trace name) and Q5
+  (`.omp-langfuse.metadata.json`) in prose.
+- ✅ **Live trace audit** — see [`.docs/AUDIT-v0.1.0.md`](./.docs/AUDIT-v0.1.0.md). Verified
+  generation usage/cost, tool `isError`/`level=ERROR` (incl. non-zero bash exits — bug found & fixed),
+  and all trace-level scores on a multi-turn, multi-tool run against `glm-5.2`.
+- ✅ **Package metadata + version bump** — `version: "0.1.0"`, description corrected.
 - ⬜ **Pricing rates refinement** — pin real per-Mtok rates for models you care about (esp.
   `glm-5.2`, currently using the GLM family estimate `0.43 / 1.74 / 0.08`) via `config.pricing` or
   updates to the bundled table in `src/pricing.ts`.
-- ⬜ **Live trace audit** — verify generation usage/cost, tool `isError`/`level=ERROR`, trace-level
-  scores (`tool_call_count`, `tool_success_rate`, `session_had_errors`, …) all land correctly in
-  Langfuse with a multi-turn, multi-tool prompt.
 - ⬜ **Optional Langfuse CLI skill** — decide whether to ship the `.agents/skills/langfuse` bundle
   (moved under OMP's `skills/` convention per the authoring doc).
 - ⬜ **Marketplace catalog entry** + **npm publish** as `omp-langfuse` (confirm name/scope ownership;
-  see DESIGN.md §12 open questions).
+  see open question 3 below).
 
 ---
 

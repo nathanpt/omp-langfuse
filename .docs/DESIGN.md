@@ -4,9 +4,9 @@ Langfuse observability extension for **OMP (oh-my-pi)**. This document defines w
 building, how it maps onto OMP's extension model, how it differs from its Pi-based predecessor
 (`pi-langfuse`), and the open risks to resolve before/while implementing.
 
-> Status: Phase 0 complete. All validation gates resolved statically against OMP's published
-> types (`@oh-my-pi/pi-coding-agent@16.3.0`) and confirmed to load at runtime. Results in
-> §10. The runtime event trace still needs a configured model to fire (see §10, last note).
+> Status: v0.1.0 released. Pipeline verified end-to-end against a real self-hosted Langfuse
+> (see [`.docs/AUDIT-v0.1.0.md`](./AUDIT-v0.1.0.md)). npm publish / marketplace entry is a planned
+> follow-up. Results in §10. The runtime event trace still needs a configured model to fire (see §10, last note).
 
 ---
 
