@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-02
+
+### Added
+- **GitHub Actions CI.** Three-job workflow (`.github/workflows/ci.yml`) runs on
+  PRs, master pushes, and version tags: typecheck + 44 unit tests, esbuild bundle
+  with a self-contained check (fails CI if the bundle retains any non-builtin
+  import), and on tags attaches the built `dist/index.js` to the GitHub Release.
+  The committed bundle remains as the install-workable fallback for Git installs.
+
 ## [0.3.0] - 2026-07-02
 
 ### Added
@@ -77,7 +86,8 @@ First usable release. Ported from
 - 43 unit tests. Live trace audit verified generation usage/cost, tool error flagging, and all
   trace-level scores on a multi-turn, multi-tool run against `glm-5.2`.
 
-[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.1
 [0.3.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.1.0
