@@ -39,6 +39,41 @@ test("resolvePrice keeps the distinct GLM-4.6 rate for that generation", () => {
   assert.equal(price?.cacheRead, 0.08);
 });
 
+test("resolvePrice bundles the post-2026-08-16 off-peak DeepSeek V4 rates", () => {
+  // DeepSeek moved to peak/off-peak tiers on 2026-08-16; the table carries
+  // the off-peak base tier. Peak is exactly 2x (documented in pricing.ts).
+  const flash = resolvePrice("deepseek-v4-flash");
+  assert.equal(flash?.input, 0.22);
+  assert.equal(flash?.output, 0.66);
+  assert.equal(flash?.cacheRead, 0.007);
+  assert.equal(flash?.cacheWrite, 0);
+  const pro = resolvePrice("deepseek-v4-pro");
+  assert.equal(pro?.input, 0.66);
+  assert.equal(pro?.output, 1.98);
+  assert.equal(pro?.cacheRead, 0.022);
+});
+
+test("resolvePrice shadows the OMP catalog's stale pre-increase deepseek-v4 rates", () => {
+  // pi-catalog 16.3.0 still carries the old flat rates; the bundled exact
+  // entry must win so costs stop under-reporting after the increase.
+  const flash = resolvePrice("deepseek-v4-flash", undefined, {
+    input: 0.14,
+    output: 0.28,
+    cacheRead: 0.0028,
+    cacheWrite: 0,
+  });
+  assert.equal(flash?.input, 0.22);
+  assert.equal(flash?.output, 0.66);
+  const pro = resolvePrice("deepseek-v4-pro", undefined, {
+    input: 0.435,
+    output: 0.87,
+    cacheRead: 0.003625,
+    cacheWrite: 0,
+  });
+  assert.equal(pro?.input, 0.66);
+  assert.equal(pro?.output, 1.98);
+});
+
 test("resolvePrice uses the registry (catalog) rate directly — it is already $/Mtok", () => {
   // ctx.model.cost comes from @oh-my-pi/pi-catalog, whose Model.cost is
   // documented as $/million tokens. It must NOT be re-converted.

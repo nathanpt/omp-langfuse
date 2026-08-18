@@ -12,7 +12,7 @@ Ported from [`pi-langfuse`](https://github.com/gooyoung/pi-langfuse) (v1.5.6) an
 Bun runtime and its divergences from Pi. See [`CHANGELOG.md`](./docs/CHANGELOG.md) for release
 history.
 
-> **Status:** v0.3.3 — installable as an OMP plugin via Git, with self-computed cost accurate for
+> **Status:** v0.3.4 — installable as an OMP plugin via Git, with self-computed cost accurate for
 > paid models (via the OMP catalog) and for subscription models (researched rates). npm publish is
 > not supported by OMP's install surface, so Git is the distribution path.
 
@@ -49,7 +49,7 @@ at runtime — bun is only needed for the install step itself.
 **Install from GitHub:**
 
 ```bash
-omp install github:nathanpt/omp-langfuse#v0.3.3
+omp install github:nathanpt/omp-langfuse#v0.3.4
 ```
 
 (See the [releases](https://github.com/nathanpt/omp-langfuse/releases) page for the latest tag;

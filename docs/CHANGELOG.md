@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-08-18
+
+### Changed
+- **Bundled DeepSeek V4 rates updated for the 2026-08-16 price increase.** DeepSeek moved
+  `deepseek-v4-flash` and `deepseek-v4-pro` from flat rates to peak/off-peak tiers (peak =
+  01:00–04:00 and 06:00–10:00 UTC, exactly 2× off-peak). The bundled table now carries the
+  off-peak base tier — flash `0.22 / 0.66 / 0.007` and pro `0.66 / 1.98 / 0.022` per Mtok
+  (input / output / cache-read). These entries also shadow the OMP model catalog until it
+  catches up: pi-catalog 16.3.0 still lists the pre-increase flat rates, which under-reported
+  flash by ~1.6–4.7×. For worst-case peak-hour accounting, set a per-model config override at
+  2× the bundled rate.
+
+
 ## [0.3.3] - 2026-07-02
 
 ### Fixed
@@ -105,7 +118,8 @@ First usable release. Ported from
 - 43 unit tests. Live trace audit verified generation usage/cost, tool error flagging, and all
   trace-level scores on a multi-turn, multi-tool run against `glm-5.2`.
 
-[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.4
 [0.3.3]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.3
 [0.3.2]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.2
 [0.3.1]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.1

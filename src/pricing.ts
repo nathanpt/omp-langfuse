@@ -61,8 +61,8 @@ export interface UsageTokens {
  * `_flag` entries are family-prefix matches (longest prefix wins). `cacheWrite` is
  * populated only where the provider publishes it (Anthropic); others use 0.
  *
- * Prices sourced from provider listings dated 2026-07. Model pricing drifts — the
- * one-time "no price for model" warning + per-model config overrides are the
+ * Prices sourced from provider listings dated 2026-07 (deepseek-v4: 2026-08). Model pricing
+ * drifts — the one-time "no price for model" warning + per-model config overrides are the
  * intended correction path.
  */
 const BUNDLED_EXACT: Record<string, TokenPrice> = {
@@ -71,7 +71,14 @@ const BUNDLED_EXACT: Record<string, TokenPrice> = {
   "deepseek-v3.1": f(0.27, 1.1, 0.07),
   "deepseek-chat": f(0.27, 1.1, 0.07),
   "deepseek-r1": f(0.55, 2.19, 0.14),
-  "deepseek-reasoner": f(0.55, 2.19, 0.14),
+  // DeepSeek V4 (2026-08-16 increase; now billed peak/off-peak by UTC hour —
+  // peak = 01:00-04:00 and 06:00-10:00 UTC, exactly 2x the off-peak rates).
+  // The table carries OFF-PEAK, DeepSeek's listed base tier (15 of 24 hours);
+  // override in config if you need peak accounting. These entries shadow the
+  // OMP catalog, which still carries the pre-increase flat rates
+  // (flash 0.14/0.28/0.0028, pro 0.435/0.87/0.003625).
+  "deepseek-v4-flash": f(0.22, 0.66, 0.007),
+  "deepseek-v4-pro": f(0.66, 1.98, 0.022),
   // Zhipu GLM-4.6 (sourced from Deep Infra / OpenRouter listings)
   "glm-4.6": f(0.43, 1.74, 0.08),
   "glm-4-32b": f(0.43, 1.74, 0.08),
