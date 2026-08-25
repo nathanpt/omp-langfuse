@@ -11,6 +11,10 @@ export interface SessionRunState {
   turnCount: number;
   tracingDisabled: boolean;
   setupAttemptedThisSession: boolean;
+  /** Session file path (…/<session>.jsonl); captured once per session, survives per-run resets. */
+  sessionFilePath: string | undefined;
+  /** Consumed byte offset per advisor transcript file; session-scoped so runs never re-pair history. */
+  advisorTranscriptOffsets: Map<string, number>;
 }
 
 const DEFAULT_SESSION_ID = "__pi_langfuse_default_session__";
@@ -29,6 +33,8 @@ function createSessionRunState(): SessionRunState {
     turnCount: 0,
     tracingDisabled: false,
     setupAttemptedThisSession: false,
+    sessionFilePath: undefined,
+    advisorTranscriptOffsets: new Map(),
   };
 }
 
@@ -135,15 +141,30 @@ export const state = {
   set setupAttemptedThisSession(attempted: boolean) {
     getSessionRunState().setupAttemptedThisSession = attempted;
   },
+
+  get sessionFilePath() {
+    return getSessionRunState().sessionFilePath;
+  },
+  set sessionFilePath(path: string | undefined) {
+    getSessionRunState().sessionFilePath = path;
+  },
+
+  get advisorTranscriptOffsets() {
+    return getSessionRunState().advisorTranscriptOffsets;
+  },
 };
 
 export function resetRunState(sessionId = getActiveSessionId()) {
   const normalizedSessionId = normalizeSessionId(sessionId);
-  const setupAttemptedThisSession =
-    state.sessionStates.get(normalizedSessionId)?.setupAttemptedThisSession ?? false;
+  const prior = state.sessionStates.get(normalizedSessionId);
+  // sessionFilePath + advisorTranscriptOffsets are session-scoped: agent_end
+  // resets the per-run state, but later runs in the same session still need
+  // the transcript path and must resume from the consumed offsets.
   state.sessionStates.set(normalizedSessionId, {
     ...createSessionRunState(),
-    setupAttemptedThisSession,
+    setupAttemptedThisSession: prior?.setupAttemptedThisSession ?? false,
+    sessionFilePath: prior?.sessionFilePath,
+    advisorTranscriptOffsets: prior?.advisorTranscriptOffsets ?? new Map(),
   });
 }
 

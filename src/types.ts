@@ -1,5 +1,6 @@
 import type { CapturePolicy } from "./capture-policy.js";
 import type { PriceOverride } from "./pricing.js";
+import type { GenerationRole } from "./role.js";
 
 export interface Config {
   publicKey: string;
@@ -86,6 +87,10 @@ export interface GenerationState {
   observation: LangfuseObservation;
   requestKey: string;
   ended: boolean;
+  /** Requesting role (primary agent vs advisor), inferred at start. */
+  role: GenerationRole;
+  /** True per-request model from the provider payload (may differ from the primary's). */
+  model?: string;
   metadata: Record<string, unknown>;
   modelParameters?: Record<string, string | number>;
   ttftRecorded?: boolean;
@@ -112,4 +117,10 @@ export interface AgentState {
   latestAssistantOutput?: unknown;
   sourceMetadata?: Record<string, unknown>;
   providerMetadataByRequest: Map<string, Record<string, unknown>>;
+  /** Request keys of open advisor generations, FIFO — pairing queue for transcript reconciliation. */
+  pendingAdvisorGenerations: string[];
+  /** Roles observed in this run; the root trace metadata is patched when a new one appears. */
+  rolesSeen: Set<string>;
+  /** Run-scoped advisor totals, flushed as trace-level `advisor_*` scores at agent_end. */
+  advisorTotals: { generations: number; costUsd: number; tokens: number };
 }

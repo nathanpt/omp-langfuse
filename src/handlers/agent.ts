@@ -101,6 +101,9 @@ export async function startAgentRun(event: Record<string, unknown>, ctx: any) {
       activeTools: new Map(),
       sourceMetadata,
       providerMetadataByRequest: new Map(),
+      pendingAdvisorGenerations: [],
+      rolesSeen: new Set(),
+      advisorTotals: { generations: 0, costUsd: 0, tokens: 0 },
     };
 
     const root = rt.propagateAttributes(
@@ -173,6 +176,16 @@ export async function finishAgentRun(event: Record<string, unknown> = {}) {
     await sendScore("total_tool_errors", scores.total_tool_errors, { traceId: state.agentState.traceId });
     await sendScore("tool_success_rate", scores.tool_success_rate, { traceId: state.agentState.traceId });
     await sendScore("session_had_errors", scores.session_had_errors, { traceId: state.agentState.traceId });
+
+    // Per-role economics: trace-level advisor totals from transcript
+    // reconciliation (trace metadata/tags cannot be set after trace creation
+    // outside the propagateAttributes closure, so scores are the surface).
+    const advisorTotals = state.agentState.advisorTotals;
+    if (advisorTotals.generations > 0) {
+      await sendScore("advisor_generation_count", advisorTotals.generations, { traceId: state.agentState.traceId });
+      await sendScore("advisor_total_tokens", advisorTotals.tokens, { traceId: state.agentState.traceId });
+      await sendScore("advisor_cost_usd", Number(advisorTotals.costUsd.toFixed(8)), { traceId: state.agentState.traceId });
+    }
   } catch (e) {
     console.warn("📊 Langfuse: Failed to finish agent observation", e);
   } finally {

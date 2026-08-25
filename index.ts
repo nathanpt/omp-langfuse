@@ -41,6 +41,7 @@ import {
   finishToolObservation,
   closeDanglingObservations,
 } from "./src/handlers/tool.js";
+import { reconcileAdvisorUsage } from "./src/handlers/advisor.js";
 
 // ============================================
 // Extension
@@ -125,6 +126,16 @@ export default async function (pi: ExtensionAPI) {
       state.setupAttemptedThisSession = false;
       await ensureConfig(ctx);
       resetRunState();
+      // Capture once per session; survives per-run resets (see state.ts).
+      // Advisor transcripts live at <sessionFile minus .jsonl>/__advisor*.jsonl.
+      state.sessionFilePath = (() => {
+        try {
+          const sessionFile = ctx?.sessionManager?.getSessionFile?.();
+          return typeof sessionFile === "string" ? sessionFile : undefined;
+        } catch {
+          return undefined;
+        }
+      })();
     }),
   );
 
@@ -147,6 +158,9 @@ export default async function (pi: ExtensionAPI) {
   pi.on("turn_start", async (event: any, ctx: any) =>
     withSession(ctx, async () => {
       captureModel(ctx);
+      // Close advisor generations whose transcript records landed since the
+      // last reconcile (advisor messages never reach message_end).
+      await reconcileAdvisorUsage();
       await startTurnObservation(event);
     }),
   );
@@ -217,6 +231,9 @@ export default async function (pi: ExtensionAPI) {
 
   pi.on("agent_end", async (event: any, ctx: any) =>
     withSession(ctx, async () => {
+      // Most advisor drains complete before the primary run ends; flush their
+      // usage into the trace before it is finalized and scored.
+      await reconcileAdvisorUsage();
       await finishAgentRun(event);
       const sessionId = state.currentSessionId;
       setTimeout(() => {

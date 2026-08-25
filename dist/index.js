@@ -33984,7 +33984,9 @@ function createSessionRunState() {
     errorCount: 0,
     turnCount: 0,
     tracingDisabled: false,
-    setupAttemptedThisSession: false
+    setupAttemptedThisSession: false,
+    sessionFilePath: void 0,
+    advisorTranscriptOffsets: /* @__PURE__ */ new Map()
   };
 }
 function normalizeSessionId(sessionId) {
@@ -34074,14 +34076,25 @@ var state = {
   },
   set setupAttemptedThisSession(attempted) {
     getSessionRunState().setupAttemptedThisSession = attempted;
+  },
+  get sessionFilePath() {
+    return getSessionRunState().sessionFilePath;
+  },
+  set sessionFilePath(path2) {
+    getSessionRunState().sessionFilePath = path2;
+  },
+  get advisorTranscriptOffsets() {
+    return getSessionRunState().advisorTranscriptOffsets;
   }
 };
 function resetRunState(sessionId = getActiveSessionId()) {
   const normalizedSessionId = normalizeSessionId(sessionId);
-  const setupAttemptedThisSession = state.sessionStates.get(normalizedSessionId)?.setupAttemptedThisSession ?? false;
+  const prior = state.sessionStates.get(normalizedSessionId);
   state.sessionStates.set(normalizedSessionId, {
     ...createSessionRunState(),
-    setupAttemptedThisSession
+    setupAttemptedThisSession: prior?.setupAttemptedThisSession ?? false,
+    sessionFilePath: prior?.sessionFilePath,
+    advisorTranscriptOffsets: prior?.advisorTranscriptOffsets ?? /* @__PURE__ */ new Map()
   });
 }
 function computeEvaluationScores(sessionId = getActiveSessionId()) {
@@ -35821,7 +35834,10 @@ async function startAgentRun(event, ctx) {
       generationOrder: [],
       activeTools: /* @__PURE__ */ new Map(),
       sourceMetadata,
-      providerMetadataByRequest: /* @__PURE__ */ new Map()
+      providerMetadataByRequest: /* @__PURE__ */ new Map(),
+      pendingAdvisorGenerations: [],
+      rolesSeen: /* @__PURE__ */ new Set(),
+      advisorTotals: { generations: 0, costUsd: 0, tokens: 0 }
     };
     const root = rt.propagateAttributes(
       {
@@ -35884,6 +35900,12 @@ async function finishAgentRun(event = {}) {
     await sendScore("total_tool_errors", scores.total_tool_errors, { traceId: state.agentState.traceId });
     await sendScore("tool_success_rate", scores.tool_success_rate, { traceId: state.agentState.traceId });
     await sendScore("session_had_errors", scores.session_had_errors, { traceId: state.agentState.traceId });
+    const advisorTotals = state.agentState.advisorTotals;
+    if (advisorTotals.generations > 0) {
+      await sendScore("advisor_generation_count", advisorTotals.generations, { traceId: state.agentState.traceId });
+      await sendScore("advisor_total_tokens", advisorTotals.tokens, { traceId: state.agentState.traceId });
+      await sendScore("advisor_cost_usd", Number(advisorTotals.costUsd.toFixed(8)), { traceId: state.agentState.traceId });
+    }
   } catch (e) {
     console.warn("\u{1F4CA} Langfuse: Failed to finish agent observation", e);
   } finally {
@@ -36058,13 +36080,70 @@ function warnOnceNoPrice(modelId) {
   );
 }
 
+// src/role.ts
+init_esm();
+function getToolNames(payload) {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+  const tools = payload.tools;
+  if (!Array.isArray(tools)) {
+    return [];
+  }
+  const names = [];
+  for (const tool of tools) {
+    if (!tool || typeof tool !== "object") {
+      continue;
+    }
+    const def = tool;
+    const fn = def.function;
+    const raw = def.name ?? (fn && typeof fn === "object" ? fn.name : void 0);
+    if (raw === void 0 || raw === null) {
+      continue;
+    }
+    const name = String(raw);
+    if (name) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+function inferGenerationRole(payload) {
+  return getToolNames(payload).includes("advise") ? "advisor" : "default";
+}
+function extractPayloadModel(payload) {
+  if (!payload || typeof payload !== "object") {
+    return void 0;
+  }
+  const model = payload.model;
+  return typeof model === "string" && model ? model : void 0;
+}
+function readOtelRoleHint(_currentSessionId) {
+  const span = trace.getActiveSpan();
+  const attrs = span?.attributes;
+  if (!attrs) {
+    return void 0;
+  }
+  const agentId = String(attrs["gen_ai.agent.id"] ?? "");
+  const agentName = String(attrs["gen_ai.agent.name"] ?? "");
+  const isAdvisor = agentId.includes("-advisor") || agentName.startsWith("Advisor");
+  const role = isAdvisor ? "advisor" : agentId ? "default" : void 0;
+  const oneshotAttr = attrs["pi.gen_ai.oneshot.kind"];
+  const oneshotKind = typeof oneshotAttr === "string" ? oneshotAttr : void 0;
+  return {
+    ...role ? { role } : {},
+    ...role === "advisor" && agentName ? { advisorName: agentName } : {},
+    ...oneshotKind ? { oneshotKind } : {}
+  };
+}
+
 // src/handlers/generation.ts
-function computeGenerationCost(message, modelId) {
+function computeGenerationCost(message, modelId, useRegistryRate = true) {
   const usage = extractUsage({ message });
   if (!usage) {
     return void 0;
   }
-  const price = resolvePrice(modelId, state.config?.pricing, state.currentModelCost);
+  const price = resolvePrice(modelId, state.config?.pricing, useRegistryRate ? state.currentModelCost : void 0);
   if (!price) {
     warnOnceNoPrice(modelId);
     return void 0;
@@ -36078,14 +36157,14 @@ function computeGenerationCost(message, modelId) {
     total: cost.total
   };
 }
-function getOpenGeneration() {
+function getOpenGeneration(options) {
   if (state.isTracingDisabled || !state.agentState) {
     return void 0;
   }
   for (let i = state.agentState.generationOrder.length - 1; i >= 0; i--) {
     const key = state.agentState.generationOrder[i];
     const genState = state.agentState.activeGenerations.get(key);
-    if (genState && !genState.ended) {
+    if (genState && !genState.ended && (options?.includeAdvisor || genState.role !== "advisor")) {
       return genState;
     }
   }
@@ -36098,14 +36177,19 @@ async function startGeneration(event) {
   try {
     const key = getRequestKey(event, `generation-${++state.agentState.generationSeq}`);
     const payload = getProviderPayload(event);
+    const otelHint = readOtelRoleHint(state.currentSessionId);
+    const role = otelHint?.role ?? inferGenerationRole(payload);
     const modelParameters = extractModelParameters(payload);
-    const model = String(event.model ?? event.modelId ?? state.currentModel ?? "");
+    const model = String(event.model ?? event.modelId ?? extractPayloadModel(payload) ?? state.currentModel ?? "");
     const provider = String(event.provider ?? state.currentProvider ?? "");
     const metadata = shapePayload({
       provider,
       requestId: key,
       url: event.url,
-      method: event.method
+      method: event.method,
+      ...role !== "default" ? { role } : {},
+      ...otelHint?.advisorName ? { advisor: otelHint.advisorName } : {},
+      ...otelHint?.oneshotKind ? { oneshotKind: otelHint.oneshotKind } : {}
     });
     const captured = applyCapturePolicy(
       {
@@ -36118,7 +36202,7 @@ async function startGeneration(event) {
     const generation = await startChildObservation({
       parent,
       runtime: getRuntime,
-      name: "llm-generation",
+      name: role === "advisor" ? "llm-generation:advisor" : "llm-generation",
       body: {
         input: captured.input,
         model: model || void 0,
@@ -36131,10 +36215,19 @@ async function startGeneration(event) {
       observation: generation,
       requestKey: key,
       ended: false,
+      role,
+      model: model || void 0,
       metadata: captured.metadata ?? {},
       modelParameters
     });
     state.agentState.generationOrder.push(key);
+    if (role === "advisor") {
+      state.agentState.pendingAdvisorGenerations.push(key);
+    }
+    if (!state.agentState.rolesSeen.has(role)) {
+      state.agentState.rolesSeen.add(role);
+      state.agentState.root?.update({ metadata: { roles: [...state.agentState.rolesSeen] } });
+    }
   } catch (e) {
     console.warn("\u{1F4CA} Langfuse: Failed to start generation", e);
   }
@@ -36211,7 +36304,8 @@ async function finishGenerationFromMessage(event) {
   }
   const usageDetails = extractUsage({ ...event, message });
   const model = String(message.model ?? event.model ?? state.currentModel ?? "");
-  const costDetails = computeGenerationCost(message, model);
+  const useRegistryRate = model.trim().toLowerCase() === state.currentModel.trim().toLowerCase();
+  const costDetails = computeGenerationCost(message, model, useRegistryRate);
   const modelParameters = extractModelParameters(getProviderPayload(event)) ?? generation.modelParameters;
   const update = {
     output,
@@ -36239,7 +36333,8 @@ async function createFallbackGenerationFromTurn(event, message) {
   try {
     const usageDetails = extractUsage({ ...event, message });
     const model = String(message.model ?? event.model ?? state.currentModel ?? "");
-    const costDetails = computeGenerationCost(message, model);
+    const useRegistryRate = model.trim().toLowerCase() === state.currentModel.trim().toLowerCase();
+    const costDetails = computeGenerationCost(message, model, useRegistryRate);
     const modelParameters = extractModelParameters(getProviderPayload(event));
     const captured = applyCapturePolicy(
       {
@@ -36272,6 +36367,86 @@ async function createFallbackGenerationFromTurn(event, message) {
     state.agentState.generationOrder.push("turn-end-fallback");
   } catch (e) {
     console.warn("\u{1F4CA} Langfuse: Failed to create fallback generation", e);
+  }
+}
+
+// src/handlers/advisor.ts
+import { readFile, readdir } from "node:fs/promises";
+import { join as join3 } from "node:path";
+var ADVISOR_TRANSCRIPT_RE = /^__advisor\..+\.jsonl$/;
+function advisorSlug(file) {
+  return file === "__advisor.jsonl" ? void 0 : file.slice("__advisor.".length, -".jsonl".length);
+}
+async function reconcileAdvisorUsage() {
+  try {
+    if (state.isTracingDisabled || !state.agentState?.root) {
+      return;
+    }
+    const agentState = state.agentState;
+    if (agentState.pendingAdvisorGenerations.length === 0) {
+      return;
+    }
+    const sessionFile = state.sessionFilePath;
+    if (!sessionFile || !sessionFile.endsWith(".jsonl")) {
+      return;
+    }
+    const dir = sessionFile.slice(0, -".jsonl".length);
+    let files;
+    try {
+      files = (await readdir(dir)).filter((n) => n === "__advisor.jsonl" || ADVISOR_TRANSCRIPT_RE.test(n));
+    } catch {
+      return;
+    }
+    files.sort();
+    for (const file of files) {
+      const slug = advisorSlug(file);
+      const content = await readFile(join3(dir, file), "utf8");
+      const consumable = content.lastIndexOf("\n") + 1;
+      const offsets = state.advisorTranscriptOffsets;
+      const chunk = content.slice(offsets.get(file) ?? 0, consumable);
+      offsets.set(file, consumable);
+      for (const line of chunk.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+        let record;
+        try {
+          record = JSON.parse(trimmed);
+        } catch {
+          continue;
+        }
+        if (record.role !== "assistant") {
+          continue;
+        }
+        while (agentState.pendingAdvisorGenerations.length > 0) {
+          const key = agentState.pendingAdvisorGenerations.shift();
+          const gen = agentState.activeGenerations.get(key);
+          if (!gen || gen.ended) {
+            continue;
+          }
+          const usageDetails = extractUsage({ message: record });
+          const model = String(record.model ?? gen.model ?? "");
+          const modelMatchesCurrent = model.trim().toLowerCase() === state.currentModel.trim().toLowerCase();
+          const costDetails = computeGenerationCost(record, model, modelMatchesCurrent);
+          gen.observation.update({
+            usageDetails,
+            model: model || void 0,
+            ...costDetails ? { costDetails } : {},
+            metadata: { ...gen.metadata, role: "advisor", ...slug ? { advisor: slug } : {} }
+          }).end();
+          gen.ended = true;
+          agentState.advisorTotals.generations += 1;
+          agentState.advisorTotals.costUsd += costDetails?.total ?? 0;
+          if (usageDetails) {
+            agentState.advisorTotals.tokens += usageDetails.input + usageDetails.output + (usageDetails.cacheRead ?? 0) + (usageDetails.cacheWrite ?? 0);
+          }
+          break;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("\u{1F4CA} Langfuse: advisor usage reconciliation failed", e);
   }
 }
 
@@ -36339,6 +36514,14 @@ async function index_default(pi) {
       state.setupAttemptedThisSession = false;
       await ensureConfig(ctx);
       resetRunState();
+      state.sessionFilePath = (() => {
+        try {
+          const sessionFile = ctx?.sessionManager?.getSessionFile?.();
+          return typeof sessionFile === "string" ? sessionFile : void 0;
+        } catch {
+          return void 0;
+        }
+      })();
     })
   );
   pi.on(
@@ -36361,6 +36544,7 @@ async function index_default(pi) {
     "turn_start",
     async (event, ctx) => withSession(ctx, async () => {
       captureModel(ctx);
+      await reconcileAdvisorUsage();
       await startTurnObservation(event);
     })
   );
@@ -36431,6 +36615,7 @@ async function index_default(pi) {
   pi.on(
     "agent_end",
     async (event, ctx) => withSession(ctx, async () => {
+      await reconcileAdvisorUsage();
       await finishAgentRun(event);
       const sessionId = state.currentSessionId;
       setTimeout(() => {

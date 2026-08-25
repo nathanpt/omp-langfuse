@@ -17,6 +17,9 @@ function makeAgentState(): AgentState {
     generationOrder: [],
     activeTools: new Map(),
     providerMetadataByRequest: new Map(),
+    pendingAdvisorGenerations: [],
+    rolesSeen: new Set(),
+    advisorTotals: { generations: 0, costUsd: 0, tokens: 0 },
   };
 }
 
@@ -97,6 +100,20 @@ test("preserves setup attempt guard when resetting run state", () => {
 
   assert.equal(state.toolCallCount, 0);
   assert.equal(state.setupAttemptedThisSession, true);
+});
+
+test("preserves session-scoped reconciliation state when resetting run state", () => {
+  clearAllSessionStates();
+  setCurrentSession("session-a");
+  state.sessionFilePath = "/tmp/sessions/sess.jsonl";
+  state.advisorTranscriptOffsets.set("__advisor.jsonl", 42);
+  state.toolCallCount = 5;
+
+  resetRunState();
+
+  assert.equal(state.toolCallCount, 0);
+  assert.equal(state.sessionFilePath, "/tmp/sessions/sess.jsonl");
+  assert.equal(state.advisorTranscriptOffsets.get("__advisor.jsonl"), 42);
 });
 
 function delay(ms: number) {

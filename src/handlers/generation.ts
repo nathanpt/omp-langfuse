@@ -15,18 +15,32 @@ import {
 import { resolvePrice, computeCost, warnOnceNoPrice } from "../pricing.js";
 import type { GenerationState, ObservationUpdate } from "../types.js";
 import { applyCapturePolicy } from "../capture-policy.js";
+import {
+  extractPayloadModel,
+  inferGenerationRole,
+  readOtelRoleHint,
+} from "../role.js";
+import type { GenerationRole } from "../role.js";
 
 /**
  * Self-compute generation cost from token usage × resolved price.
  * Never trusts host `usage.cost` (zeroed for subscription models). Returns undefined
  * when no price resolves for the model (warns once).
+ *
+ * The catalog (registry) rate describes the primary's current model; pass
+ * `useRegistryRate = false` for any generation whose model may differ (e.g. the
+ * advisor's), so the primary's rate cannot leak onto another model.
  */
-function computeGenerationCost(message: Record<string, unknown>, modelId: string): Record<string, number> | undefined {
+export function computeGenerationCost(
+  message: Record<string, unknown>,
+  modelId: string,
+  useRegistryRate = true,
+): Record<string, number> | undefined {
   const usage = extractUsage({ message });
   if (!usage) {
     return undefined;
   }
-  const price = resolvePrice(modelId, state.config?.pricing, state.currentModelCost);
+  const price = resolvePrice(modelId, state.config?.pricing, useRegistryRate ? state.currentModelCost : undefined);
   if (!price) {
     warnOnceNoPrice(modelId);
     return undefined;
@@ -41,7 +55,14 @@ function computeGenerationCost(message: Record<string, unknown>, modelId: string
   };
 }
 
-export function getOpenGeneration(): GenerationState | undefined {
+/**
+ * Most-recent open generation, searching backwards. Primary-only by default:
+ * advisor generations never receive `message_end` events, so a primary
+ * assistant message must not swallow an in-flight advisor generation, and
+ * primary stream updates must not steal advisor TTFT. Pass
+ * `{ includeAdvisor: true }` to consider them.
+ */
+export function getOpenGeneration(options?: { includeAdvisor?: boolean }): GenerationState | undefined {
   if (state.isTracingDisabled || !state.agentState) {
     return undefined;
   }
@@ -49,7 +70,7 @@ export function getOpenGeneration(): GenerationState | undefined {
   for (let i = state.agentState.generationOrder.length - 1; i >= 0; i--) {
     const key = state.agentState.generationOrder[i];
     const genState = state.agentState.activeGenerations.get(key);
-    if (genState && !genState.ended) {
+    if (genState && !genState.ended && (options?.includeAdvisor || genState.role !== "advisor")) {
       return genState;
     }
   }
@@ -65,14 +86,19 @@ export async function startGeneration(event: Record<string, unknown>) {
   try {
     const key = getRequestKey(event, `generation-${++state.agentState.generationSeq}`);
     const payload = getProviderPayload(event);
+    const otelHint = readOtelRoleHint(state.currentSessionId);
+    const role: GenerationRole = otelHint?.role ?? inferGenerationRole(payload);
     const modelParameters = extractModelParameters(payload);
-    const model = String(event.model ?? event.modelId ?? state.currentModel ?? "");
+    const model = String(event.model ?? event.modelId ?? extractPayloadModel(payload) ?? state.currentModel ?? "");
     const provider = String(event.provider ?? state.currentProvider ?? "");
     const metadata = shapePayload({
       provider,
       requestId: key,
       url: event.url,
       method: event.method,
+      ...(role !== "default" ? { role } : {}),
+      ...(otelHint?.advisorName ? { advisor: otelHint.advisorName } : {}),
+      ...(otelHint?.oneshotKind ? { oneshotKind: otelHint.oneshotKind } : {}),
     }) as Record<string, unknown>;
     const captured = applyCapturePolicy(
       {
@@ -86,7 +112,7 @@ export async function startGeneration(event: Record<string, unknown>) {
     const generation = await startChildObservation({
       parent,
       runtime: getRuntime,
-      name: "llm-generation",
+      name: role === "advisor" ? "llm-generation:advisor" : "llm-generation",
       body: {
         input: captured.input,
         model: model || undefined,
@@ -100,10 +126,21 @@ export async function startGeneration(event: Record<string, unknown>) {
       observation: generation,
       requestKey: key,
       ended: false,
+      role,
+      model: model || undefined,
       metadata: captured.metadata ?? {},
       modelParameters,
     });
     state.agentState.generationOrder.push(key);
+    if (role === "advisor") {
+      // Advisor assistant messages never reach message_end; usage is reconciled
+      // later from the advisor transcript (src/handlers/advisor.ts).
+      state.agentState.pendingAdvisorGenerations.push(key);
+    }
+    if (!state.agentState.rolesSeen.has(role)) {
+      state.agentState.rolesSeen.add(role);
+      state.agentState.root?.update({ metadata: { roles: [...state.agentState.rolesSeen] } });
+    }
   } catch (e) {
     console.warn("📊 Langfuse: Failed to start generation", e);
   }
@@ -202,7 +239,8 @@ export async function finishGenerationFromMessage(event: Record<string, unknown>
 
   const usageDetails = extractUsage({ ...event, message });
   const model = String(message.model ?? event.model ?? state.currentModel ?? "");
-  const costDetails = computeGenerationCost(message, model);
+  const useRegistryRate = model.trim().toLowerCase() === state.currentModel.trim().toLowerCase();
+  const costDetails = computeGenerationCost(message, model, useRegistryRate);
   const modelParameters = extractModelParameters(getProviderPayload(event)) ?? generation.modelParameters;
   const update: ObservationUpdate = {
     output,
@@ -233,7 +271,8 @@ export async function createFallbackGenerationFromTurn(event: Record<string, unk
   try {
     const usageDetails = extractUsage({ ...event, message });
     const model = String(message.model ?? event.model ?? state.currentModel ?? "");
-    const costDetails = computeGenerationCost(message, model);
+    const useRegistryRate = model.trim().toLowerCase() === state.currentModel.trim().toLowerCase();
+    const costDetails = computeGenerationCost(message, model, useRegistryRate);
     const modelParameters = extractModelParameters(getProviderPayload(event));
     const captured = applyCapturePolicy(
       {
