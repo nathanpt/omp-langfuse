@@ -5,7 +5,8 @@ making changes or cutting a release.
 
 ## Current state
 
-- **Version:** `0.3.3` (see `package.json` and `git describe --tags`)
+- **Version:** `0.3.4` (see `package.json` and `git describe --tags`); master is past the tag with
+  the advisor role-tagging story, awaiting the next curated release
 - **Repo:** `git@github.com:nathanpt/omp-langfuse.git`, default branch `master`
 - **Distribution:** Git-only OMP plugin (`omp install github:nathanpt/omp-langfuse#vX.Y.Z`). npm is
   not supported by omp's install surface.
@@ -13,8 +14,10 @@ making changes or cutting a release.
   builds `dist/index.js`, extracts the matching `docs/CHANGELOG.md` section, and creates the GitHub
   Release.
 - **Shipped so far:** v0.1.0 (first usable), v0.2.0 (accurate cost via catalog + real GLM-5 rates),
-  v0.3.0 (installable as a plugin), v0.3.1/v0.3.2 (CI).
-- **Open (optional):** marketplace catalog repo; optional Langfuse CLI skill.
+  v0.3.0 (installable as a plugin), v0.3.1/v0.3.2 (CI), v0.3.3 (install docs), v0.3.4 (DeepSeek V4
+  rates).
+- **Open (optional):** marketplace catalog repo; optional Langfuse CLI skill; task-role (subagent)
+  tagging (advisor tagging is done — subagents already produce separate traces).
 
 > Update this block when you tag a release.
 
@@ -38,6 +41,10 @@ Get to a working live probe in under two minutes.
    You should see `📊 Langfuse: Tracing enabled → <host>` at startup.
    (Testing the *installed plugin* path instead? `omp install ./omp-langfuse` symlinks with no bun
    needed; `omp install github:nathanpt/omp-langfuse#vX.Y.Z` requires `bun` in `$PATH`.)
+   **Caveat:** an installed plugin loads *in addition to* `-e` — while one is installed, `-e`
+   probes emit two traces per run (the banner prints twice; that is the tell). This machine's
+   installed plugin is currently a symlink to this repo, so a plain `omp -p "…"` with no `-e`
+   exercises the exact same bundle, single-loaded.
 5. **Default test model** is whatever OMP is configured to use (this machine: `zai/glm-5.2`).
    glm-5.2 is zeroed in the catalog (subscription); cost comes from the bundled GLM-5 rate
    (`1.4 / 4.4 / 0.26` per Mtok) in `src/pricing.ts`.
@@ -51,6 +58,12 @@ omp-langfuse is a Langfuse observability **plugin** for [OMP](https://omp.sh) (o
 one trace per agent run — root agent observation, one generation per provider request, one tool
 observation per tool call — with **self-computed cost** (OMP zeroes host `usage.cost` for
 subscription/free-tier models, so we never trust it).
+
+Generations are role-tagged: the advisor's provider requests are distinguished from the primary's
+(`llm-generation:advisor` + `metadata.role` + the request's true model; usage reconciled from the
+advisor transcript since advisor messages never reach `message_end`), and trace-level
+`advisor_generation_count` / `advisor_total_tokens` / `advisor_cost_usd` scores make per-role cost
+queryable in Langfuse with zero dashboard setup.
 
 Ported from [pi-langfuse](https://github.com/gooyoung/pi-langfuse) v1.5.6 and adapted for OMP's Bun
 runtime. The design notes and audits live in `.docs/` (gitignored, local-only); the public docs are
@@ -100,6 +113,16 @@ Unit tests are not enough for trace-path changes. Verify against a real Langfuse
 3. Fetch the latest trace via the Langfuse API and confirm: generation usage + `costDetails`,
    tool `level=ERROR`/`isError=true` on the failing call, and all trace-level scores
    (`tool_call_count`, `turn_count`, `total_tool_errors`, `tool_success_rate`, `session_had_errors`).
+4. For advisor-path changes, enable the advisor via a run-scoped overlay (this machine has no
+   `advisor` model role by default — a bare `--advisor` spawns nothing):
+   ```bash
+   printf 'modelRoles:\n  advisor: zai/glm-5.2:high\nadvisor:\n  enabled: true\n' > /tmp/advisor.yml
+   omp -p "use bash to run: echo hi && then run: wc -l package.json" --config /tmp/advisor.yml
+   ```
+   Then assert on the latest trace: ≥1 `llm-generation:advisor` with `metadata.role` and its true
+   model (not the primary's), non-empty `usageDetails` + `costDetails` priced from the bundled
+   table, and the three `advisor_*` scores. An advisor call still streaming at `agent_end` closes
+   empty — a known accepted gap, not a regression.
 
 See `.docs/AUDIT-v0.1.0.md` (local) for the canonical example of this audit.
 
@@ -110,7 +133,8 @@ index.ts                  extension entry: lifecycle subscriptions + command reg
 src/
   config.ts               credential loading/saving, UI setup flow
   pricing.ts              per-token price resolution + cost computation
-  handlers/{agent,turn,generation,tool}.ts   observation builders (the trace path)
+  role.ts                 role inference: advise-tool marker, OTel hint, payload model
+  handlers/{agent,turn,generation,tool,advisor}.ts   observation builders (the trace path)
   langfuse.ts             @langfuse/tracing + OTel runtime, REST fallback, score sending
   state.ts, capture-policy.ts, redaction.ts, source-metadata.ts, utils.ts, types.ts, constants.ts
   commands.ts             /langfuse-* command handlers
