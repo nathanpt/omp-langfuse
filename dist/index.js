@@ -36416,7 +36416,8 @@ async function reconcileAdvisorUsage() {
         } catch {
           continue;
         }
-        if (record.role !== "assistant") {
+        const message = record.message && typeof record.message === "object" ? record.message : record;
+        if (message.role !== "assistant") {
           continue;
         }
         while (agentState.pendingAdvisorGenerations.length > 0) {
@@ -36425,10 +36426,10 @@ async function reconcileAdvisorUsage() {
           if (!gen || gen.ended) {
             continue;
           }
-          const usageDetails = extractUsage({ message: record });
-          const model = String(record.model ?? gen.model ?? "");
+          const usageDetails = extractUsage({ message });
+          const model = String(message.model ?? gen.model ?? "");
           const modelMatchesCurrent = model.trim().toLowerCase() === state.currentModel.trim().toLowerCase();
-          const costDetails = computeGenerationCost(record, model, modelMatchesCurrent);
+          const costDetails = computeGenerationCost(message, model, modelMatchesCurrent);
           gen.observation.update({
             usageDetails,
             model: model || void 0,

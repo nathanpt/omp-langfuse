@@ -70,7 +70,13 @@ export async function reconcileAdvisorUsage(): Promise<void> {
         } catch {
           continue; // malformed line — skip without failing reconciliation
         }
-        if (record.role !== "assistant") {
+        // Records are `{type:"message", message:{role, model, usage}}` envelopes
+        // from the recorder; accept a flat message too.
+        const message =
+          record.message && typeof record.message === "object"
+            ? (record.message as Record<string, unknown>)
+            : record;
+        if (message.role !== "assistant") {
           continue;
         }
 
@@ -84,10 +90,10 @@ export async function reconcileAdvisorUsage(): Promise<void> {
             continue;
           }
 
-          const usageDetails = extractUsage({ message: record });
-          const model = String(record.model ?? gen.model ?? "");
+          const usageDetails = extractUsage({ message });
+          const model = String(message.model ?? gen.model ?? "");
           const modelMatchesCurrent = model.trim().toLowerCase() === state.currentModel.trim().toLowerCase();
-          const costDetails = computeGenerationCost(record, model, modelMatchesCurrent);
+          const costDetails = computeGenerationCost(message, model, modelMatchesCurrent);
 
           gen.observation
             .update({

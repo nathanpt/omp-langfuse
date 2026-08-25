@@ -75,8 +75,12 @@ async function makeTranscriptDir(fileName = "__advisor.jsonl") {
   return { sessionFile, transcriptFile: join(tmp, "sess", fileName) };
 }
 
+/** Recorder-envelope shape: {type:"message", message:{role, model, usage}}. */
 function assistantRecord(model = "glm-5.2", input = 100, output = 20): string {
-  return JSON.stringify({ role: "assistant", model, usage: { input, output } });
+  return JSON.stringify({
+    type: "message",
+    message: { role: "assistant", model, usage: { input, output } },
+  });
 }
 
 test("reconcileAdvisorUsage closes pending advisor generations from transcript records", async () => {
@@ -145,7 +149,7 @@ test("malformed transcript lines are skipped without failing reconciliation", as
   clearAllSessionStates();
   setCurrentSession("advisor-malformed");
   const { sessionFile, transcriptFile } = await makeTranscriptDir();
-  await writeFile(transcriptFile, `{"role": "assistant", "broken\n${assistantRecord()}\n`);
+  await writeFile(transcriptFile, `{"type": "message", "broken\n${assistantRecord()}\n`);
   state.sessionFilePath = sessionFile;
 
   const gen1 = makeAdvisorGeneration("adv-1");
@@ -156,6 +160,32 @@ test("malformed transcript lines are skipped without failing reconciliation", as
 
   assert.equal(gen1.observation.ended, true);
   assert.equal(gen1.observation.updates.at(-1)?.usageDetails?.input, 100);
+  assert.equal(agentState.advisorTotals.generations, 1);
+});
+
+test("non-assistant and non-message records are ignored", async () => {
+  clearAllSessionStates();
+  setCurrentSession("advisor-nonassistant");
+  const { sessionFile, transcriptFile } = await makeTranscriptDir();
+  await writeFile(
+    transcriptFile,
+    [
+      JSON.stringify({ type: "title", title: "session title", updatedAt: "2026-08-25T00:00:00Z" }),
+      JSON.stringify({ type: "session", cwd: "/tmp", version: 1 }),
+      JSON.stringify({ type: "message", message: { role: "user", content: "hi" } }),
+      assistantRecord(),
+      "",
+    ].join("\n") + "\n",
+  );
+  state.sessionFilePath = sessionFile;
+
+  const gen1 = makeAdvisorGeneration("adv-1");
+  const agentState = makeAgentState(["adv-1"], [gen1]);
+  state.agentState = agentState;
+
+  await reconcileAdvisorUsage();
+
+  assert.equal(gen1.observation.ended, true);
   assert.equal(agentState.advisorTotals.generations, 1);
 });
 
@@ -175,6 +205,26 @@ test("named advisor transcripts tag metadata.advisor with the file slug", async 
   const update = gen1.observation.updates.at(-1);
   assert.equal(update?.metadata?.role, "advisor");
   assert.equal(update?.metadata?.advisor, "security");
+});
+
+test("flat assistant records are accepted alongside recorder envelopes", async () => {
+  clearAllSessionStates();
+  setCurrentSession("advisor-flat");
+  const { sessionFile, transcriptFile } = await makeTranscriptDir();
+  await writeFile(
+    transcriptFile,
+    `${JSON.stringify({ role: "assistant", model: "glm-5.2", usage: { input: 9, output: 4 } })}\n`,
+  );
+  state.sessionFilePath = sessionFile;
+
+  const gen1 = makeAdvisorGeneration("adv-1");
+  const agentState = makeAgentState(["adv-1"], [gen1]);
+  state.agentState = agentState;
+
+  await reconcileAdvisorUsage();
+
+  assert.equal(gen1.observation.ended, true);
+  assert.deepEqual(gen1.observation.updates.at(-1)?.usageDetails, { input: 9, output: 4, total: 13 });
 });
 
 test("reconcile is a no-op without pending generations or a resolvable transcript dir", async () => {
