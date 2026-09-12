@@ -515,6 +515,32 @@ export async function forceShutdownRuntime(): Promise<void> {
   await doShutdownRuntime();
 }
 
+/**
+ * Flush what the run has queued so far, without shutting anything down.
+ * Fired fire-and-forget at turn_end: otherwise the SDK batches an entire
+ * run into one shutdown export, which overflows Langfuse's 4.5 MB
+ * ingestion cap on long sessions — the whole batch is dropped, token
+ * spend with it (see PROGRESS.md 2026-08-25).
+ */
+export async function flushRuntimeTracers(): Promise<void> {
+  try {
+    const rt = await getRuntime();
+    const results = await Promise.allSettled([
+      withTimeout("OTel force flush", rt.tracerProvider?.forceFlush?.()),
+      withTimeout("SpanProcessor force flush", rt.spanProcessor?.forceFlush?.()),
+    ]);
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      debugLog(
+        `📊 Langfuse: periodic turn flush: ${failures.length} layer(s) failed`,
+      );
+    }
+  } catch (e) {
+    // No runtime to flush (e.g. racing a shutdown) — nothing to do.
+    debugLog(`📊 Langfuse: periodic turn flush skipped: ${String(e)}`);
+  }
+}
+
 export function __setRuntimeForTest(rt: LangfuseRuntime | null, timeoutMs = DEFAULT_SHUTDOWN_STEP_TIMEOUT_MS): void {
   runtime = rt;
   shutdownStepTimeoutMs = timeoutMs;

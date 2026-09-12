@@ -19,7 +19,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/exten
 
 import { state, resetRunState, runWithSession, setCurrentSession } from "./src/state.js";
 import { ensureConfig, promptForConfig, loadConfig } from "./src/config.js";
-import { shutdownRuntime } from "./src/langfuse.js";
+import { flushRuntimeTracers, shutdownRuntime } from "./src/langfuse.js";
 import {
   handleLangfusePrivacyCommand,
   handleLangfuseStatusCommand,
@@ -226,6 +226,12 @@ export default async function (pi: ExtensionAPI) {
         await finishGenerationFromMessage(event);
       }
       finishTurnObservation(event);
+      // Periodic flush (PROGRESS 2026-08-25): long sessions batch the whole
+      // run into one shutdown export, overflowing Langfuse's 4.5 MB
+      // ingestion cap — the batch is dropped, token spend with it. Flush
+      // both OTel layers per turn, fire-and-forget: turn_end must not wait
+      // on network I/O.
+      void flushRuntimeTracers();
     }),
   );
 
