@@ -34516,6 +34516,23 @@ async function forceShutdownRuntime() {
   activeSessions.clear();
   await doShutdownRuntime();
 }
+async function flushRuntimeTracers() {
+  try {
+    const rt = await getRuntime();
+    const results = await Promise.allSettled([
+      withTimeout("OTel force flush", rt.tracerProvider?.forceFlush?.()),
+      withTimeout("SpanProcessor force flush", rt.spanProcessor?.forceFlush?.())
+    ]);
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      debugLog(
+        `\u{1F4CA} Langfuse: periodic turn flush: ${failures.length} layer(s) failed`
+      );
+    }
+  } catch (e) {
+    debugLog(`\u{1F4CA} Langfuse: periodic turn flush skipped: ${String(e)}`);
+  }
+}
 async function sendScore(name, value, options = {}) {
   try {
     const rt = await getRuntime();
@@ -36611,6 +36628,7 @@ async function index_default(pi) {
         await finishGenerationFromMessage(event);
       }
       finishTurnObservation(event);
+      void flushRuntimeTracers();
     })
   );
   pi.on(
