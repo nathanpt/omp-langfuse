@@ -34026,8 +34026,13 @@ function setCurrentSession(sessionId) {
 }
 function runWithSession(sessionId, fn) {
   const normalizedSessionId = normalizeSessionId(sessionId);
+  const previousActiveSessionId = activeSessionId;
   setCurrentSession(normalizedSessionId);
-  return sessionScope.run(normalizedSessionId, fn);
+  try {
+    return sessionScope.run(normalizedSessionId, fn);
+  } finally {
+    setCurrentSession(previousActiveSessionId);
+  }
 }
 var state = {
   config: null,
@@ -34133,6 +34138,7 @@ getSessionRunState();
 import { existsSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 var INTERACTIVE_ROOT_WALK_DEPTH = 8;
+var INMEM_SCOPE_PREFIX = "inmem:";
 var TEMP_ARTIFACT_DIR = /^(omp-task-|omp-eval-agent-)/;
 function subagentTraceName(taskId) {
   const safe = taskId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
@@ -34178,7 +34184,7 @@ function resolveSessionScope(input) {
   }
   if (input.rawSessionId && input.active.ownerSessionId && input.rawSessionId !== input.active.ownerSessionId && input.active.hasOpenRoot) {
     return {
-      scopeId: `inmem:${input.rawSessionId}`,
+      scopeId: `${INMEM_SCOPE_PREFIX}${input.rawSessionId}`,
       inheritedParent: {
         sessionId: input.active.langfuseSessionId || void 0,
         traceId: input.active.traceId
@@ -35286,6 +35292,22 @@ function getCapturePolicy() {
 function truncate2(value, maxLength = MAX_STRING_LENGTH) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}... [truncated]` : value;
 }
+function readSessionFile(ctx) {
+  try {
+    const file = ctx?.sessionManager?.getSessionFile?.();
+    return typeof file === "string" && file ? file : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function readRawSessionId(ctx) {
+  try {
+    const id = ctx?.sessionManager?.getSessionId?.();
+    return typeof id === "string" && id ? id : void 0;
+  } catch {
+    return void 0;
+  }
+}
 function tryParseJson(value) {
   const trimmed = value.trim();
   if (!trimmed || !["{", "["].includes(trimmed[0])) {
@@ -35854,7 +35876,6 @@ function collectSourceMetadata(cwd) {
 }
 
 // src/handlers/agent.ts
-var INMEM_SCOPE_PREFIX = "inmem:";
 function stringMetadata(metadata) {
   if (!metadata) {
     return void 0;
@@ -35906,15 +35927,7 @@ async function startAgentRun(event, ctx) {
       images: event.images,
       context: event.context ?? event.attachments
     });
-    let sessionFile;
-    try {
-      const file = ctx?.sessionManager?.getSessionFile?.();
-      if (typeof file === "string" && file) {
-        sessionFile = file;
-      }
-    } catch {
-    }
-    sessionFile ??= state.sessionFilePath;
+    const sessionFile = readSessionFile(ctx) ?? state.sessionFilePath;
     let attribution = detectSubagentSession(sessionFile);
     if (!attribution) {
       const inherited = getSessionRunState().inheritedParent;
@@ -35972,18 +35985,6 @@ async function startAgentRun(event, ctx) {
     if (attribution) {
       state.agentState.rolesSeen.add("subagent");
       state.agentState.subagent = attribution;
-    }
-    let ownerSessionId;
-    try {
-      const id = ctx?.sessionManager?.getSessionId?.();
-      if (typeof id === "string" && id) {
-        ownerSessionId = id;
-      }
-    } catch {
-    }
-    if (ownerSessionId) {
-      state.agentState.ownerSessionId = ownerSessionId;
-      getSessionRunState().ownerSessionId = ownerSessionId;
     }
     const root = rt.propagateAttributes(
       {
@@ -36643,30 +36644,12 @@ async function index_default(pi) {
     }
   });
   const getSessionId = (ctx) => {
-    try {
-      const sessionFile = ctx?.sessionManager?.getSessionFile?.();
-      return sessionFile ? basename3(sessionFile, ".jsonl") : void 0;
-    } catch {
-      return void 0;
-    }
+    const sessionFile = readSessionFile(ctx);
+    return sessionFile ? basename3(sessionFile, ".jsonl") : void 0;
   };
   const withSession = (ctx, fn) => {
-    let sessionFile;
-    try {
-      const file = ctx?.sessionManager?.getSessionFile?.();
-      if (typeof file === "string" && file) {
-        sessionFile = file;
-      }
-    } catch {
-    }
-    let rawSessionId;
-    try {
-      const id = ctx?.sessionManager?.getSessionId?.();
-      if (typeof id === "string" && id) {
-        rawSessionId = id;
-      }
-    } catch {
-    }
+    const sessionFile = readSessionFile(ctx);
+    const rawSessionId = readRawSessionId(ctx);
     const activeRun = getSessionRunState();
     const decision = resolveSessionScope({
       sessionFile,
@@ -36710,14 +36693,7 @@ async function index_default(pi) {
       state.setupAttemptedThisSession = false;
       await ensureConfig(ctx);
       resetRunState();
-      state.sessionFilePath = (() => {
-        try {
-          const sessionFile = ctx?.sessionManager?.getSessionFile?.();
-          return typeof sessionFile === "string" ? sessionFile : void 0;
-        } catch {
-          return void 0;
-        }
-      })();
+      state.sessionFilePath = readSessionFile(ctx);
     })
   );
   pi.on(

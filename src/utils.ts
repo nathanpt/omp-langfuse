@@ -18,6 +18,31 @@ export function truncate(value: string, maxLength = MAX_STRING_LENGTH): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}... [truncated]` : value;
 }
 
+interface HostSessionManager {
+  getSessionFile?: () => unknown;
+  getSessionId?: () => unknown;
+}
+
+/** ctx.sessionManager.getSessionFile(); undefined when absent, empty, or throwing (ephemeral mode). */
+export function readSessionFile(ctx?: { sessionManager?: HostSessionManager } | undefined): string | undefined {
+  try {
+    const file = ctx?.sessionManager?.getSessionFile?.();
+    return typeof file === "string" && file ? file : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** ctx.sessionManager.getSessionId(); undefined when absent, empty, or throwing. */
+export function readRawSessionId(ctx?: { sessionManager?: HostSessionManager } | undefined): string | undefined {
+  try {
+    const id = ctx?.sessionManager?.getSessionId?.();
+    return typeof id === "string" && id ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function tryParseJson(value: string): unknown {
   const trimmed = value.trim();
   if (!trimmed || !["{", "["].includes(trimmed[0])) {

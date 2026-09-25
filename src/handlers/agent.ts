@@ -1,14 +1,19 @@
 import { state, resetRunState, computeEvaluationScores, getSessionRunState } from "../state.js";
 import { getRuntime, sendScore } from "../langfuse.js";
 import { ensureConfig } from "../config.js";
-import { shapePayload, truncate, extractFinalAssistant, extractAssistantOutput, getCapturePolicy } from "../utils.js";
+import {
+  shapePayload,
+  truncate,
+  extractFinalAssistant,
+  extractAssistantOutput,
+  getCapturePolicy,
+  readSessionFile,
+} from "../utils.js";
 import { closeDanglingObservations } from "./tool.js";
 import { applyCapturePolicy } from "../capture-policy.js";
 import { collectSourceMetadata } from "../source-metadata.js";
 import { rememberParentTrace, lookupParentTrace } from "../parent-trace.js";
-import { detectSubagentSession, subagentTraceName } from "../subagent.js";
-
-const INMEM_SCOPE_PREFIX = "inmem:";
+import { detectSubagentSession, subagentTraceName, INMEM_SCOPE_PREFIX } from "../subagent.js";
 
 function stringMetadata(metadata: Record<string, unknown> | undefined): Record<string, string> | undefined {
   if (!metadata) {
@@ -84,16 +89,7 @@ export async function startAgentRun(event: Record<string, unknown>, ctx: any) {
     // Subagent attribution: file-backed task/eval lanes are detected from the
     // session file path; in-memory children carry the parent link on their
     // session scope (written by the withSession fence in index.ts).
-    let sessionFile: string | undefined;
-    try {
-      const file = ctx?.sessionManager?.getSessionFile?.();
-      if (typeof file === "string" && file) {
-        sessionFile = file;
-      }
-    } catch {
-      // Ephemeral mode or throwing host; fall back to the captured path.
-    }
-    sessionFile ??= state.sessionFilePath;
+    const sessionFile = readSessionFile(ctx) ?? state.sessionFilePath;
 
     let attribution = detectSubagentSession(sessionFile);
     if (!attribution) {
@@ -163,19 +159,9 @@ export async function startAgentRun(event: Record<string, unknown>, ctx: any) {
       state.agentState.rolesSeen.add("subagent");
       state.agentState.subagent = attribution;
     }
-    let ownerSessionId: string | undefined;
-    try {
-      const id = ctx?.sessionManager?.getSessionId?.();
-      if (typeof id === "string" && id) {
-        ownerSessionId = id;
-      }
-    } catch {
-      // Treat as absent.
-    }
-    if (ownerSessionId) {
-      state.agentState.ownerSessionId = ownerSessionId;
-      getSessionRunState().ownerSessionId = ownerSessionId;
-    }
+    // ownerSessionId on the run state is maintained by the withSession fence
+    // (set-if-unset from ctx.sessionManager.getSessionId()); attribution reads
+    // that copy, so no per-run duplicate is stored here.
 
     const root = rt.propagateAttributes(
       {

@@ -108,8 +108,6 @@ export interface AgentState {
   root?: LangfuseObservation;
   activeTurn?: LangfuseObservation;
   traceId?: string;
-  /** `ctx.sessionManager.getSessionId()` of the run's own session (scope owner). */
-  ownerSessionId?: string;
   /** Set when this run was attributed to a task/eval subagent; drives trace name, session grouping, metadata. */
   subagent?: {
     taskId: string;

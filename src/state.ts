@@ -70,8 +70,18 @@ export function setCurrentSession(sessionId?: string) {
 
 export function runWithSession<T>(sessionId: string | undefined, fn: () => T): T {
   const normalizedSessionId = normalizeSessionId(sessionId);
+  const previousActiveSessionId = activeSessionId;
   setCurrentSession(normalizedSessionId);
-  return sessionScope.run(normalizedSessionId, fn);
+  try {
+    return sessionScope.run(normalizedSessionId, fn);
+  } finally {
+    // Re-anchor the ambient scope on exit: without this, whichever scope ran
+    // last (an in-memory child, a subagent lane) strands the global, and later
+    // events that carry no session file fall into that dead scope — the
+    // parent's own root is then never finished or scored. Mirrors
+    // AsyncLocalStorage restoring the store when run() exits.
+    setCurrentSession(previousActiveSessionId);
+  }
 }
 
 export const state = {

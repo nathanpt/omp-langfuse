@@ -26,7 +26,7 @@ import {
   handleLangfuseStatusCommand,
   handleLangfuseTestCommand,
 } from "./src/commands.js";
-import { getMessageFromEvent, extractAssistantOutput, getCapturePolicy } from "./src/utils.js";
+import { getMessageFromEvent, extractAssistantOutput, getCapturePolicy, readSessionFile, readRawSessionId } from "./src/utils.js";
 import { applyCapturePolicy } from "./src/capture-policy.js";
 import { startAgentRun, finishAgentRun } from "./src/handlers/agent.js";
 import { startTurnObservation, finishTurnObservation } from "./src/handlers/turn.js";
@@ -91,36 +91,16 @@ export default async function (pi: ExtensionAPI) {
     // ctx.sessionManager.getSessionFile() returns undefined in ephemeral
     // (--no-session) mode. Fall back to an empty id; the session scope still
     // isolates state per active run.
-    try {
-      const sessionFile = ctx?.sessionManager?.getSessionFile?.();
-      return sessionFile ? basename(sessionFile, ".jsonl") : undefined;
-    } catch {
-      return undefined;
-    }
+    const sessionFile = readSessionFile(ctx);
+    return sessionFile ? basename(sessionFile, ".jsonl") : undefined;
   };
 
   // Scope fence: resolve the Langfuse session scope for every lifecycle
   // handler (including session_start) so file-backed subagents land in their
   // own scope and in-memory subagents cannot clobber an open parent trace.
   const withSession = <T>(ctx: any, fn: () => T): T => {
-    let sessionFile: string | undefined;
-    try {
-      const file = ctx?.sessionManager?.getSessionFile?.();
-      if (typeof file === "string" && file) {
-        sessionFile = file;
-      }
-    } catch {
-      // Ephemeral (--no-session) mode or throwing host; treat as absent.
-    }
-    let rawSessionId: string | undefined;
-    try {
-      const id = ctx?.sessionManager?.getSessionId?.();
-      if (typeof id === "string" && id) {
-        rawSessionId = id;
-      }
-    } catch {
-      // Treat as absent.
-    }
+    const sessionFile = readSessionFile(ctx);
+    const rawSessionId = readRawSessionId(ctx);
     // Snapshot the currently active scope BEFORE entering the child scope: an
     // in-memory subagent links back to the open parent run through it.
     const activeRun = getSessionRunState();
@@ -174,14 +154,7 @@ export default async function (pi: ExtensionAPI) {
       resetRunState();
       // Capture once per session; survives per-run resets (see state.ts).
       // Advisor transcripts live at <sessionFile minus .jsonl>/__advisor*.jsonl.
-      state.sessionFilePath = (() => {
-        try {
-          const sessionFile = ctx?.sessionManager?.getSessionFile?.();
-          return typeof sessionFile === "string" ? sessionFile : undefined;
-        } catch {
-          return undefined;
-        }
-      })();
+      state.sessionFilePath = readSessionFile(ctx);
     }),
   );
 

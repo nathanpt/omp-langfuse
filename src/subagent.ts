@@ -27,6 +27,9 @@ export interface SessionScopeDecision {
 /** Capped to defend against pathological layouts (mirrors OMP session-manager). */
 const INTERACTIVE_ROOT_WALK_DEPTH = 8;
 
+/** Scope-key prefix for in-memory children; minted here, stripped by the agent handler. */
+export const INMEM_SCOPE_PREFIX = "inmem:";
+
 /** OMP temp artifact dirs: task/index.ts `omp-task-<Snowflake>`, eval/agent-bridge.ts `omp-eval-agent-<Snowflake>`. */
 const TEMP_ARTIFACT_DIR = /^(omp-task-|omp-eval-agent-)/;
 
@@ -104,7 +107,7 @@ export function resolveSessionScope(input: {
     input.active.hasOpenRoot
   ) {
     return {
-      scopeId: `inmem:${input.rawSessionId}`,
+      scopeId: `${INMEM_SCOPE_PREFIX}${input.rawSessionId}`,
       inheritedParent: {
         sessionId: input.active.langfuseSessionId || undefined,
         traceId: input.active.traceId,

@@ -10,7 +10,7 @@ import {
   subagentTraceName,
 } from "../src/subagent.ts";
 import { rememberParentTrace, lookupParentTrace, clearParentTraceRegistry } from "../src/parent-trace.ts";
-import { clearAllSessionStates } from "../src/state.ts";
+import { clearAllSessionStates, getSessionRunState, runWithSession, state } from "../src/state.ts";
 
 async function makeTempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "omp-langfuse-subagent-"));
@@ -146,6 +146,43 @@ test("resolveSessionScope: no owner yet stays in the current scope", () => {
     active: { langfuseSessionId: "", hasOpenRoot: true },
   });
   assert.deepEqual(decision, {});
+});
+
+test("resolveSessionScope: closed-root owner mismatch falls back to the current scope", () => {
+  const decision = resolveSessionScope({
+    sessionFile: undefined,
+    rawSessionId: "parent-uuid",
+    active: { ownerSessionId: "child-uuid", langfuseSessionId: "inmem:child-uuid", hasOpenRoot: false },
+  });
+  assert.deepEqual(decision, {});
+});
+
+test("runWithSession restores the ambient scope after an in-memory child exits", () => {
+  clearAllSessionStates();
+
+  // No-session parent run: its events set the owner on the default scope.
+  runWithSession(undefined, () => {
+    getSessionRunState().ownerSessionId = "parent-uuid";
+  });
+
+  // A child event splits into its own scope…
+  const decision = resolveSessionScope({
+    sessionFile: undefined,
+    rawSessionId: "child-uuid",
+    active: {
+      ownerSessionId: getSessionRunState().ownerSessionId,
+      traceId: "t1",
+      langfuseSessionId: "",
+      hasOpenRoot: true,
+    },
+  });
+  assert.equal(decision.scopeId, "inmem:child-uuid");
+  runWithSession(decision.scopeId, () => {});
+
+  // …and after the child's run the ambient scope is the parent's again, so
+  // later no-file parent events must not fall into the dead child scope.
+  assert.equal(state.currentSessionId, "");
+  assert.equal(getSessionRunState().ownerSessionId, "parent-uuid");
 });
 
 test("parent trace registry: remember, overwrite, no-op, clear", () => {
