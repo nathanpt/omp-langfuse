@@ -64,8 +64,8 @@ jobs:
           set -euo pipefail
           # The esbuild bundle must not retain any bare/package imports —
           # OMP loads it from the plugin set without a resolver.
-          leak=$(grep -oE 'from "[^"]+"' dist/index.js \
-            | grep -vE '"(node:)?(fs|path|os|crypto|child_process|stream|events|util|url|buffer|http|https|net|tls|zlib|string_decoder|tty|dns|worker_threads|async_hooks|perf_hooks|inspector|v8|vm|timers|assert|readline|module|process|querystring)"' \
+            leak=$(grep -oE 'from "[^"]+"' dist/index.js \
+            | grep -vE '"(node:)?(fs|fs/promises|path|os|crypto|child_process|stream|events|util|url|buffer|http|https|net|tls|zlib|string_decoder|tty|dns|worker_threads|async_hooks|perf_hooks|inspector|v8|vm|timers|assert|readline|module|process|querystring)"' \
             | sort -u || true)
           if [ -n "$leak" ]; then
             echo "::error::Bundle contains non-builtin imports (would break plugin load):"
