@@ -1,10 +1,14 @@
-import { state, resetRunState, computeEvaluationScores } from "../state.js";
+import { state, resetRunState, computeEvaluationScores, getSessionRunState } from "../state.js";
 import { getRuntime, sendScore } from "../langfuse.js";
 import { ensureConfig } from "../config.js";
 import { shapePayload, truncate, extractFinalAssistant, extractAssistantOutput, getCapturePolicy } from "../utils.js";
 import { closeDanglingObservations } from "./tool.js";
 import { applyCapturePolicy } from "../capture-policy.js";
 import { collectSourceMetadata } from "../source-metadata.js";
+import { rememberParentTrace, lookupParentTrace } from "../parent-trace.js";
+import { detectSubagentSession, subagentTraceName } from "../subagent.js";
+
+const INMEM_SCOPE_PREFIX = "inmem:";
 
 function stringMetadata(metadata: Record<string, unknown> | undefined): Record<string, string> | undefined {
   if (!metadata) {
@@ -76,6 +80,46 @@ export async function startAgentRun(event: Record<string, unknown>, ctx: any) {
       images: event.images,
       context: event.context ?? event.attachments,
     });
+
+    // Subagent attribution: file-backed task/eval lanes are detected from the
+    // session file path; in-memory children carry the parent link on their
+    // session scope (written by the withSession fence in index.ts).
+    let sessionFile: string | undefined;
+    try {
+      const file = ctx?.sessionManager?.getSessionFile?.();
+      if (typeof file === "string" && file) {
+        sessionFile = file;
+      }
+    } catch {
+      // Ephemeral mode or throwing host; fall back to the captured path.
+    }
+    sessionFile ??= state.sessionFilePath;
+
+    let attribution = detectSubagentSession(sessionFile);
+    if (!attribution) {
+      const inherited = getSessionRunState().inheritedParent;
+      if (inherited) {
+        // The `inmem:` prefix is the scope key only, never a Langfuse id.
+        const strippedScopeId = state.currentSessionId.startsWith(INMEM_SCOPE_PREFIX)
+          ? state.currentSessionId.slice(INMEM_SCOPE_PREFIX.length)
+          : state.currentSessionId;
+        const taskId = getSessionRunState().ownerSessionId || strippedScopeId;
+        attribution = {
+          taskId,
+          ownSessionId: strippedScopeId,
+          parentSessionId: inherited.sessionId,
+          parentTraceId: inherited.traceId,
+          traceName: subagentTraceName(taskId),
+        };
+      }
+    }
+    if (attribution?.parentSessionId && !attribution.parentTraceId) {
+      attribution.parentTraceId = lookupParentTrace(attribution.parentSessionId);
+    }
+
+    const langfuseSessionId = truncate(attribution?.parentSessionId ?? state.currentSessionId, 200) || undefined;
+    const traceName = attribution?.traceName ?? "omp-agent";
+
     const sourceMetadata = collectSourceMetadata(cwd);
     const captured = applyCapturePolicy(
       {
@@ -85,7 +129,15 @@ export async function startAgentRun(event: Record<string, unknown>, ctx: any) {
           ...sourceMetadata,
           ...(state.currentModel ? { model: state.currentModel } : {}),
           ...(state.currentProvider ? { provider: state.currentProvider } : {}),
-          sessionId: state.currentSessionId || undefined,
+          ...(attribution
+            ? {
+                role: "subagent",
+                task_id: attribution.taskId,
+                sessionId: attribution.ownSessionId,
+                ...(attribution.parentSessionId ? { parent_session_id: attribution.parentSessionId } : {}),
+                ...(attribution.parentTraceId ? { parent_trace_id: attribution.parentTraceId } : {}),
+              }
+            : { sessionId: state.currentSessionId || undefined }),
         },
         systemPrompt: systemPromptString ? truncate(systemPromptString, 20000) : undefined,
       },
@@ -105,16 +157,35 @@ export async function startAgentRun(event: Record<string, unknown>, ctx: any) {
       rolesSeen: new Set(),
       advisorTotals: { generations: 0, costUsd: 0, tokens: 0 },
     };
+    if (attribution) {
+      // Pre-seed the role so generation.ts appends "default" to the role story
+      // instead of replacing it, and store the linkage for the finish update.
+      state.agentState.rolesSeen.add("subagent");
+      state.agentState.subagent = attribution;
+    }
+    let ownerSessionId: string | undefined;
+    try {
+      const id = ctx?.sessionManager?.getSessionId?.();
+      if (typeof id === "string" && id) {
+        ownerSessionId = id;
+      }
+    } catch {
+      // Treat as absent.
+    }
+    if (ownerSessionId) {
+      state.agentState.ownerSessionId = ownerSessionId;
+      getSessionRunState().ownerSessionId = ownerSessionId;
+    }
 
     const root = rt.propagateAttributes(
       {
-        sessionId: state.currentSessionId ? truncate(state.currentSessionId, 200) : undefined,
-        traceName: "omp-agent",
+        sessionId: langfuseSessionId,
+        traceName,
         metadata: stringMetadata(captured.metadata),
       },
       () =>
         rt.startObservation(
-          "omp-agent",
+          traceName,
             {
               input: captured.input,
               metadata: {
@@ -129,6 +200,11 @@ export async function startAgentRun(event: Record<string, unknown>, ctx: any) {
     state.agentState.root = root;
     state.agentState.traceId = root.traceId;
     updateTraceIO(captured.input, undefined);
+    // Register this run as the parent for later file-backed subagents in the
+    // same Langfuse session. Subagent traces are never registered as parents.
+    if (!attribution && state.currentSessionId && root.traceId) {
+      rememberParentTrace(state.currentSessionId, root.traceId);
+    }
   } catch (e) {
     console.warn("📊 Langfuse: Failed to create agent observation", e);
     state.isTracingDisabled = true;
@@ -154,6 +230,20 @@ export async function finishAgentRun(event: Record<string, unknown> = {}) {
         provider: state.currentProvider || undefined,
         totalTools: state.toolCallCount,
         ...computeEvaluationScores(),
+        // Re-assert subagent fields so the end update cannot drop them.
+        ...(state.agentState.subagent
+          ? {
+              role: "subagent",
+              task_id: state.agentState.subagent.taskId,
+              sessionId: state.agentState.subagent.ownSessionId,
+              ...(state.agentState.subagent.parentSessionId
+                ? { parent_session_id: state.agentState.subagent.parentSessionId }
+                : {}),
+              ...(state.agentState.subagent.parentTraceId
+                ? { parent_trace_id: state.agentState.subagent.parentTraceId }
+                : {}),
+            }
+          : {}),
       },
     },
     getCapturePolicy(),

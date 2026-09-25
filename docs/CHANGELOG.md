@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Subagent traces are attributed, grouped, and linked to their parent session.**
+  Traces from `task` and eval subagents are now named `omp-agent:<taskId>` (e.g.
+  `omp-agent:AlphaLane`) instead of a bare `omp-agent`, carry `role: "subagent"`,
+  `task_id`, their own `sessionId`, and `parent_session_id` / `parent_trace_id`
+  metadata, and share the parent run's Langfuse `sessionId` — one session filter
+  now shows the whole tree. File-backed subagents resolve the parent through the
+  interactive root (the same walk OMP uses for breadcrumb resolution, so
+  `--continue` stays on the real conversation); in-memory subagents link via a
+  snapshot of the open parent run and run in a fenced scope that cannot end the
+  parent's root observation. Primary runs are unchanged.
+
 ## [0.3.4] - 2026-08-18
 
 ### Changed

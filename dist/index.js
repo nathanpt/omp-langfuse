@@ -4890,8 +4890,8 @@ var require_promise = __commonJS({
       _resolve;
       _reject;
       constructor() {
-        this._promise = new Promise((resolve3, reject) => {
-          this._resolve = resolve3;
+        this._promise = new Promise((resolve4, reject) => {
+          this._resolve = resolve4;
           this._reject = reject;
         });
       }
@@ -4987,9 +4987,9 @@ var require_exporter = __commonJS({
     var api_1 = (init_esm(), __toCommonJS(esm_exports));
     var suppress_tracing_1 = require_suppress_tracing();
     function _export(exporter, arg) {
-      return new Promise((resolve3) => {
+      return new Promise((resolve4) => {
         api_1.context.with((0, suppress_tracing_1.suppressTracing)(api_1.context.active()), () => {
-          exporter.export(arg, resolve3);
+          exporter.export(arg, resolve4);
         });
       });
     }
@@ -6762,14 +6762,14 @@ var require_BatchSpanProcessorBase = __commonJS({
        * for all other cases _flush should be used
        * */
       _flushAll() {
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve4, reject) => {
           const promises = [];
           const count = Math.ceil(this._finishedSpans.length / this._maxExportBatchSize);
           for (let i = 0, j = count; i < j; i++) {
             promises.push(this._flushOneBatch());
           }
           Promise.all(promises).then(() => {
-            resolve3();
+            resolve4();
           }).catch(reject);
         });
       }
@@ -6778,7 +6778,7 @@ var require_BatchSpanProcessorBase = __commonJS({
         if (this._finishedSpans.length === 0) {
           return Promise.resolve();
         }
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve4, reject) => {
           const timer = setTimeout(() => {
             reject(new Error("Timeout"));
           }, this._exportTimeoutMillis);
@@ -6793,7 +6793,7 @@ var require_BatchSpanProcessorBase = __commonJS({
             const doExport = () => this._exporter.export(spans, (result) => {
               clearTimeout(timer);
               if (result.code === core_1.ExportResultCode.SUCCESS) {
-                resolve3();
+                resolve4();
               } else {
                 reject(result.error ?? new Error("BatchSpanProcessor: span export failed"));
               }
@@ -7188,12 +7188,12 @@ var require_MultiSpanProcessor = __commonJS({
         for (const spanProcessor of this._spanProcessors) {
           promises.push(spanProcessor.forceFlush());
         }
-        return new Promise((resolve3) => {
+        return new Promise((resolve4) => {
           Promise.all(promises).then(() => {
-            resolve3();
+            resolve4();
           }).catch((error) => {
             (0, core_1.globalErrorHandler)(error || new Error("MultiSpanProcessor: forceFlush failed"));
-            resolve3();
+            resolve4();
           });
         });
       }
@@ -7219,9 +7219,9 @@ var require_MultiSpanProcessor = __commonJS({
         for (const spanProcessor of this._spanProcessors) {
           promises.push(spanProcessor.shutdown());
         }
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve4, reject) => {
           Promise.all(promises).then(() => {
-            resolve3();
+            resolve4();
           }, reject);
         });
       }
@@ -7277,32 +7277,32 @@ var require_BasicTracerProvider = __commonJS({
       forceFlush() {
         const timeout = this._config.forceFlushTimeoutMillis;
         const promises = this._activeSpanProcessor["_spanProcessors"].map((spanProcessor) => {
-          return new Promise((resolve3) => {
+          return new Promise((resolve4) => {
             let state2;
             const timeoutInterval = setTimeout(() => {
-              resolve3(new Error(`Span processor did not completed within timeout period of ${timeout} ms`));
+              resolve4(new Error(`Span processor did not completed within timeout period of ${timeout} ms`));
               state2 = ForceFlushState.timeout;
             }, timeout);
             spanProcessor.forceFlush().then(() => {
               clearTimeout(timeoutInterval);
               if (state2 !== ForceFlushState.timeout) {
                 state2 = ForceFlushState.resolved;
-                resolve3(state2);
+                resolve4(state2);
               }
             }).catch((error) => {
               clearTimeout(timeoutInterval);
               state2 = ForceFlushState.error;
-              resolve3(error);
+              resolve4(error);
             });
           });
         });
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve4, reject) => {
           Promise.all(promises).then((results) => {
             const errors = results.filter((result) => result !== ForceFlushState.resolved);
             if (errors.length > 0) {
               reject(errors);
             } else {
-              resolve3();
+              resolve4();
             }
           }).catch((error) => reject([error]));
         });
@@ -8245,7 +8245,7 @@ async function requestWithRetries(requestFn, maxRetries = DEFAULT_MAX_RETRIES) {
   for (let i = 0; i < maxRetries; ++i) {
     if ([408, 429].includes(response.status) || response.status >= 500) {
       const delay2 = getRetryDelayFromHeaders(response, i);
-      await new Promise((resolve3) => setTimeout(resolve3, delay2));
+      await new Promise((resolve4) => setTimeout(resolve4, delay2));
       response = await requestFn();
     } else {
       break;
@@ -8543,7 +8543,7 @@ async function uploadWithBackoff(params) {
       }
       const delay2 = baseDelay * Math.pow(2, attempt);
       const jitter = Math.random() * 1e3;
-      await new Promise((resolve3) => setTimeout(resolve3, delay2 + jitter));
+      await new Promise((resolve4) => setTimeout(resolve4, delay2 + jitter));
     }
   }
   return void 0;
@@ -9978,8 +9978,8 @@ var init_dist = __esm({
     fetcher = fetcherImpl;
     HttpResponsePromise = class _HttpResponsePromise extends Promise {
       constructor(promise) {
-        super((resolve3) => {
-          resolve3(void 0);
+        super((resolve4) => {
+          resolve4(void 0);
         });
         this.innerPromise = promise;
       }
@@ -17854,7 +17854,7 @@ var init_dist = __esm({
       }
       async __get(promptName, request = {}, requestOptions) {
         var _a2, _b, _c, _d, _e, _f, _g, _h;
-        const { version, label, resolve: resolve3 } = request;
+        const { version, label, resolve: resolve4 } = request;
         const _queryParams = {};
         if (version != null) {
           _queryParams["version"] = version.toString();
@@ -17862,8 +17862,8 @@ var init_dist = __esm({
         if (label != null) {
           _queryParams["label"] = label;
         }
-        if (resolve3 != null) {
-          _queryParams["resolve"] = resolve3.toString();
+        if (resolve4 != null) {
+          _queryParams["resolve"] = resolve4.toString();
         }
         let _headers = mergeHeaders(
           (_a2 = this._options) == null ? void 0 : _a2.headers,
@@ -29334,7 +29334,7 @@ var init_version2 = __esm({
 import * as zlib from "zlib";
 import { Readable } from "stream";
 function sendWithHttp(request, url, headers, compression, userAgent, agent, data, timeoutMillis) {
-  return new Promise((resolve3) => {
+  return new Promise((resolve4) => {
     const parsedUrl = new URL(url);
     if (userAgent) {
       headers["User-Agent"] = `${userAgent} ${DEFAULT_USER_AGENT}`;
@@ -29353,7 +29353,7 @@ function sendWithHttp(request, url, headers, compression, userAgent, agent, data
         responseSize += chunk.length;
         if (responseSize > MAX_RESPONSE_BODY_SIZE) {
           const sizeError = new Error(`OTLP export response body exceeded size limit of ${MAX_RESPONSE_BODY_SIZE} bytes`);
-          resolve3({ status: "failure", error: sizeError });
+          resolve4({ status: "failure", error: sizeError });
           res.destroy();
           return;
         }
@@ -29361,18 +29361,18 @@ function sendWithHttp(request, url, headers, compression, userAgent, agent, data
       });
       res.on("end", () => {
         if (res.statusCode && res.statusCode <= 299) {
-          resolve3({
+          resolve4({
             status: "success",
             data: Buffer.concat(responseData)
           });
         } else if (res.statusCode && isExportHTTPErrorRetryable(res.statusCode)) {
-          resolve3({
+          resolve4({
             status: "retryable",
             retryInMillis: parseRetryAfterToMills(res.headers["retry-after"])
           });
         } else {
           const error = new OTLPExporterError(res.statusMessage, res.statusCode, Buffer.concat(responseData).toString());
-          resolve3({
+          resolve4({
             status: "failure",
             error
           });
@@ -29380,17 +29380,17 @@ function sendWithHttp(request, url, headers, compression, userAgent, agent, data
       });
       res.on("error", (error) => {
         if (res.statusCode && res.statusCode <= 299) {
-          resolve3({
+          resolve4({
             status: "success"
           });
         } else if (res.statusCode && isExportHTTPErrorRetryable(res.statusCode)) {
-          resolve3({
+          resolve4({
             status: "retryable",
             error,
             retryInMillis: parseRetryAfterToMills(res.headers["retry-after"])
           });
         } else {
-          resolve3({
+          resolve4({
             status: "failure",
             error
           });
@@ -29399,26 +29399,26 @@ function sendWithHttp(request, url, headers, compression, userAgent, agent, data
     });
     req.setTimeout(timeoutMillis, () => {
       req.destroy();
-      resolve3({
+      resolve4({
         status: "retryable",
         error: new Error("Request timed out")
       });
     });
     req.on("error", (error) => {
       if (isHttpTransportNetworkErrorRetryable(error)) {
-        resolve3({
+        resolve4({
           status: "retryable",
           error
         });
       } else {
-        resolve3({
+        resolve4({
           status: "failure",
           error
         });
       }
     });
     compressAndSend(req, compression, data, (error) => {
-      resolve3({
+      resolve4({
         status: "failure",
         error
       });
@@ -29530,9 +29530,9 @@ var init_retrying_transport = __esm({
         this._transport = transport;
       }
       retry(data, timeoutMillis, inMillis) {
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve4, reject) => {
           setTimeout(() => {
-            this._transport.send(data, timeoutMillis).then(resolve3, reject);
+            this._transport.send(data, timeoutMillis).then(resolve4, reject);
           }, inMillis);
         });
       }
@@ -33967,10 +33967,24 @@ Run Evaluations:`;
 });
 
 // index.ts
-import { basename as basename2 } from "node:path";
+import { basename as basename3 } from "node:path";
 
 // src/state.ts
 import { AsyncLocalStorage } from "node:async_hooks";
+
+// src/parent-trace.ts
+var parentTraceBySession = /* @__PURE__ */ new Map();
+function rememberParentTrace(sessionId, traceId) {
+  if (!sessionId || !traceId) {
+    return;
+  }
+  parentTraceBySession.set(sessionId, traceId);
+}
+function lookupParentTrace(sessionId) {
+  return parentTraceBySession.get(sessionId);
+}
+
+// src/state.ts
 var DEFAULT_SESSION_ID = "__pi_langfuse_default_session__";
 var activeSessionId = DEFAULT_SESSION_ID;
 var sessionScope = new AsyncLocalStorage();
@@ -33986,6 +34000,8 @@ function createSessionRunState() {
     tracingDisabled: false,
     setupAttemptedThisSession: false,
     sessionFilePath: void 0,
+    ownerSessionId: void 0,
+    inheritedParent: void 0,
     advisorTranscriptOffsets: /* @__PURE__ */ new Map()
   };
 }
@@ -34094,6 +34110,8 @@ function resetRunState(sessionId = getActiveSessionId()) {
     ...createSessionRunState(),
     setupAttemptedThisSession: prior?.setupAttemptedThisSession ?? false,
     sessionFilePath: prior?.sessionFilePath,
+    ownerSessionId: prior?.ownerSessionId,
+    inheritedParent: prior?.inheritedParent,
     advisorTranscriptOffsets: prior?.advisorTranscriptOffsets ?? /* @__PURE__ */ new Map()
   });
 }
@@ -34111,15 +34129,74 @@ function computeEvaluationScores(sessionId = getActiveSessionId()) {
 }
 getSessionRunState();
 
+// src/subagent.ts
+import { existsSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
+var INTERACTIVE_ROOT_WALK_DEPTH = 8;
+var TEMP_ARTIFACT_DIR = /^(omp-task-|omp-eval-agent-)/;
+function subagentTraceName(taskId) {
+  const safe = taskId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
+  return `omp-agent:${/^_*$/.test(safe) ? "subagent" : safe}`;
+}
+function detectSubagentSession(sessionFile) {
+  if (!sessionFile) {
+    return void 0;
+  }
+  const resolved = resolve(sessionFile);
+  const taskId = basename(resolved, ".jsonl");
+  let current = resolved;
+  let moved = false;
+  for (let depth = 0; depth < INTERACTIVE_ROOT_WALK_DEPTH; depth++) {
+    const parentSessionFile = `${dirname(current)}.jsonl`;
+    if (!existsSync(parentSessionFile)) {
+      break;
+    }
+    current = parentSessionFile;
+    moved = true;
+  }
+  if (moved) {
+    return {
+      taskId,
+      ownSessionId: taskId,
+      parentSessionId: basename(current, ".jsonl"),
+      // parentTraceId is filled from the registry by the caller.
+      traceName: subagentTraceName(taskId)
+    };
+  }
+  if (TEMP_ARTIFACT_DIR.test(basename(dirname(resolved)))) {
+    return {
+      taskId,
+      ownSessionId: taskId,
+      traceName: subagentTraceName(taskId)
+    };
+  }
+  return void 0;
+}
+function resolveSessionScope(input) {
+  if (input.sessionFile) {
+    return { scopeId: basename(input.sessionFile, ".jsonl") };
+  }
+  if (input.rawSessionId && input.active.ownerSessionId && input.rawSessionId !== input.active.ownerSessionId && input.active.hasOpenRoot) {
+    return {
+      scopeId: `inmem:${input.rawSessionId}`,
+      inheritedParent: {
+        sessionId: input.active.langfuseSessionId || void 0,
+        traceId: input.active.traceId
+      }
+    };
+  }
+  return {};
+}
+
 // src/config.ts
-import { chmodSync, mkdirSync, readFileSync as readFileSync2, existsSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { chmodSync, mkdirSync, readFileSync as readFileSync2, existsSync as existsSync2, writeFileSync } from "node:fs";
+import { dirname as dirname2 } from "node:path";
 
 // src/constants.ts
 import { homedir } from "node:os";
-import { resolve } from "node:path";
-var CONFIG_DIR = resolve(homedir(), ".omp", "agent", "omp-langfuse");
-var CONFIG_PATH = resolve(CONFIG_DIR, "config.json");
+import { resolve as resolve2 } from "node:path";
+var CONFIG_DIR = resolve2(homedir(), ".omp", "agent", "omp-langfuse");
+var CONFIG_PATH = resolve2(CONFIG_DIR, "config.json");
 var DEFAULT_LANGFUSE_HOST = "https://cloud.langfuse.com";
 var PRICE_PER_MILLION = 1e6;
 var MAX_STRING_LENGTH = 12e3;
@@ -34143,7 +34220,7 @@ function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
 function delay(ms) {
-  return new Promise((resolve3) => setTimeout(resolve3, ms));
+  return new Promise((resolve4) => setTimeout(resolve4, ms));
 }
 function debugLog(message) {
   if (process.env.OMP_LANGFUSE_DEBUG === "1" || process.env.OMP_LANGFUSE_DEBUG === "true") {
@@ -34180,10 +34257,10 @@ async function withTimeout(label, operation) {
   try {
     return await Promise.race([
       operation,
-      new Promise((resolve3) => {
+      new Promise((resolve4) => {
         timeout = setTimeout(() => {
           debugLog(`\u{1F4CA} Langfuse: ${label} timed out after ${shutdownStepTimeoutMs}ms`);
-          resolve3(void 0);
+          resolve4(void 0);
         }, shutdownStepTimeoutMs);
       })
     ]);
@@ -34732,7 +34809,7 @@ function applyCapturePolicy(payload, policy = createCapturePolicy()) {
 
 // src/config.ts
 function loadConfigFromFile(path2 = CONFIG_PATH, env = process.env) {
-  if (existsSync(path2)) {
+  if (existsSync2(path2)) {
     try {
       const content = readFileSync2(path2, "utf-8");
       const config = JSON.parse(content);
@@ -34773,8 +34850,8 @@ function loadConfig(env = process.env, path2 = CONFIG_PATH) {
   return loadConfigFromFile(path2, env) || loadConfigFromEnv(env);
 }
 function saveConfig(config, path2 = CONFIG_PATH) {
-  mkdirSync(dirname(path2), { recursive: true, mode: 448 });
-  chmodSync(dirname(path2), 448);
+  mkdirSync(dirname2(path2), { recursive: true, mode: 448 });
+  chmodSync(dirname2(path2), 448);
   writeFileSync(path2, `${JSON.stringify(config, null, 2)}
 `, { encoding: "utf-8", mode: 384 });
   chmodSync(path2, 384);
@@ -34866,7 +34943,7 @@ async function promptForConfig(ctx) {
 }
 
 // src/commands.ts
-import { existsSync as existsSync2, readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
 var PRIVACY_PRESETS = ["metadata-only", "prompts-only", "conversations", "full-debug"];
 function notify(ctx, message, level = "info") {
   if (ctx.hasUI && ctx.ui?.notify) {
@@ -34963,7 +35040,7 @@ function flag(value) {
   return value ? "on" : "off";
 }
 function readPersistedConfig(path2) {
-  if (!existsSync2(path2)) {
+  if (!existsSync3(path2)) {
     return {};
   }
   try {
@@ -35633,8 +35710,8 @@ function closeDanglingObservations(statusMessage) {
 }
 
 // src/source-metadata.ts
-import { existsSync as existsSync3, readFileSync as readFileSync4 } from "node:fs";
-import { basename, dirname as dirname2, join as join2 } from "node:path";
+import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
+import { basename as basename2, dirname as dirname3, join as join2 } from "node:path";
 import { execFileSync } from "node:child_process";
 var OVERRIDE_KEYS = /* @__PURE__ */ new Set([
   "repo_identity",
@@ -35706,13 +35783,13 @@ function findRepoMetadataFile(cwd, gitRoot) {
   const root = gitRoot;
   while (true) {
     const candidate = join2(current, ".omp-langfuse.metadata.json");
-    if (existsSync3(candidate)) {
+    if (existsSync4(candidate)) {
       return candidate;
     }
     if (current === root) {
       break;
     }
-    const parent = dirname2(current);
+    const parent = dirname3(current);
     if (parent === current) {
       break;
     }
@@ -35756,7 +35833,7 @@ function collectSourceMetadata(cwd) {
     const overrides = readWhitelistedOverrides(cwd, gitRoot);
     const metadata = {
       source_type: "git-repo",
-      repo_root_name: basename(gitRoot),
+      repo_root_name: basename2(gitRoot),
       ...branch ? { git_branch: branch } : {},
       git_commit: commit,
       ...remoteMetadata,
@@ -35777,6 +35854,7 @@ function collectSourceMetadata(cwd) {
 }
 
 // src/handlers/agent.ts
+var INMEM_SCOPE_PREFIX = "inmem:";
 function stringMetadata(metadata) {
   if (!metadata) {
     return void 0;
@@ -35828,6 +35906,35 @@ async function startAgentRun(event, ctx) {
       images: event.images,
       context: event.context ?? event.attachments
     });
+    let sessionFile;
+    try {
+      const file = ctx?.sessionManager?.getSessionFile?.();
+      if (typeof file === "string" && file) {
+        sessionFile = file;
+      }
+    } catch {
+    }
+    sessionFile ??= state.sessionFilePath;
+    let attribution = detectSubagentSession(sessionFile);
+    if (!attribution) {
+      const inherited = getSessionRunState().inheritedParent;
+      if (inherited) {
+        const strippedScopeId = state.currentSessionId.startsWith(INMEM_SCOPE_PREFIX) ? state.currentSessionId.slice(INMEM_SCOPE_PREFIX.length) : state.currentSessionId;
+        const taskId = getSessionRunState().ownerSessionId || strippedScopeId;
+        attribution = {
+          taskId,
+          ownSessionId: strippedScopeId,
+          parentSessionId: inherited.sessionId,
+          parentTraceId: inherited.traceId,
+          traceName: subagentTraceName(taskId)
+        };
+      }
+    }
+    if (attribution?.parentSessionId && !attribution.parentTraceId) {
+      attribution.parentTraceId = lookupParentTrace(attribution.parentSessionId);
+    }
+    const langfuseSessionId = truncate2(attribution?.parentSessionId ?? state.currentSessionId, 200) || void 0;
+    const traceName = attribution?.traceName ?? "omp-agent";
     const sourceMetadata = collectSourceMetadata(cwd);
     const captured = applyCapturePolicy(
       {
@@ -35837,7 +35944,13 @@ async function startAgentRun(event, ctx) {
           ...sourceMetadata,
           ...state.currentModel ? { model: state.currentModel } : {},
           ...state.currentProvider ? { provider: state.currentProvider } : {},
-          sessionId: state.currentSessionId || void 0
+          ...attribution ? {
+            role: "subagent",
+            task_id: attribution.taskId,
+            sessionId: attribution.ownSessionId,
+            ...attribution.parentSessionId ? { parent_session_id: attribution.parentSessionId } : {},
+            ...attribution.parentTraceId ? { parent_trace_id: attribution.parentTraceId } : {}
+          } : { sessionId: state.currentSessionId || void 0 }
         },
         systemPrompt: systemPromptString ? truncate2(systemPromptString, 2e4) : void 0
       },
@@ -35856,14 +35969,30 @@ async function startAgentRun(event, ctx) {
       rolesSeen: /* @__PURE__ */ new Set(),
       advisorTotals: { generations: 0, costUsd: 0, tokens: 0 }
     };
+    if (attribution) {
+      state.agentState.rolesSeen.add("subagent");
+      state.agentState.subagent = attribution;
+    }
+    let ownerSessionId;
+    try {
+      const id = ctx?.sessionManager?.getSessionId?.();
+      if (typeof id === "string" && id) {
+        ownerSessionId = id;
+      }
+    } catch {
+    }
+    if (ownerSessionId) {
+      state.agentState.ownerSessionId = ownerSessionId;
+      getSessionRunState().ownerSessionId = ownerSessionId;
+    }
     const root = rt.propagateAttributes(
       {
-        sessionId: state.currentSessionId ? truncate2(state.currentSessionId, 200) : void 0,
-        traceName: "omp-agent",
+        sessionId: langfuseSessionId,
+        traceName,
         metadata: stringMetadata(captured.metadata)
       },
       () => rt.startObservation(
-        "omp-agent",
+        traceName,
         {
           input: captured.input,
           metadata: {
@@ -35877,6 +36006,9 @@ async function startAgentRun(event, ctx) {
     state.agentState.root = root;
     state.agentState.traceId = root.traceId;
     updateTraceIO(captured.input, void 0);
+    if (!attribution && state.currentSessionId && root.traceId) {
+      rememberParentTrace(state.currentSessionId, root.traceId);
+    }
   } catch (e) {
     console.warn("\u{1F4CA} Langfuse: Failed to create agent observation", e);
     state.isTracingDisabled = true;
@@ -35899,7 +36031,15 @@ async function finishAgentRun(event = {}) {
         model: state.currentModel || void 0,
         provider: state.currentProvider || void 0,
         totalTools: state.toolCallCount,
-        ...computeEvaluationScores()
+        ...computeEvaluationScores(),
+        // Re-assert subagent fields so the end update cannot drop them.
+        ...state.agentState.subagent ? {
+          role: "subagent",
+          task_id: state.agentState.subagent.taskId,
+          sessionId: state.agentState.subagent.ownSessionId,
+          ...state.agentState.subagent.parentSessionId ? { parent_session_id: state.agentState.subagent.parentSessionId } : {},
+          ...state.agentState.subagent.parentTraceId ? { parent_trace_id: state.agentState.subagent.parentTraceId } : {}
+        } : {}
       }
     },
     getCapturePolicy()
@@ -36505,12 +36645,50 @@ async function index_default(pi) {
   const getSessionId = (ctx) => {
     try {
       const sessionFile = ctx?.sessionManager?.getSessionFile?.();
-      return sessionFile ? basename2(sessionFile, ".jsonl") : void 0;
+      return sessionFile ? basename3(sessionFile, ".jsonl") : void 0;
     } catch {
       return void 0;
     }
   };
-  const withSession = (ctx, fn) => runWithSession(getSessionId(ctx) ?? state.currentSessionId, fn);
+  const withSession = (ctx, fn) => {
+    let sessionFile;
+    try {
+      const file = ctx?.sessionManager?.getSessionFile?.();
+      if (typeof file === "string" && file) {
+        sessionFile = file;
+      }
+    } catch {
+    }
+    let rawSessionId;
+    try {
+      const id = ctx?.sessionManager?.getSessionId?.();
+      if (typeof id === "string" && id) {
+        rawSessionId = id;
+      }
+    } catch {
+    }
+    const activeRun = getSessionRunState();
+    const decision = resolveSessionScope({
+      sessionFile,
+      rawSessionId,
+      active: {
+        ownerSessionId: activeRun.ownerSessionId,
+        traceId: activeRun.agentState?.traceId,
+        langfuseSessionId: state.currentSessionId,
+        hasOpenRoot: Boolean(activeRun.agentState?.root)
+      }
+    });
+    return runWithSession(decision.scopeId ?? state.currentSessionId, () => {
+      const runState = getSessionRunState();
+      if (rawSessionId && !runState.ownerSessionId) {
+        runState.ownerSessionId = rawSessionId;
+      }
+      if (decision.inheritedParent) {
+        runState.inheritedParent = decision.inheritedParent;
+      }
+      return fn();
+    });
+  };
   const captureModel = (ctx) => {
     const model = ctx?.model;
     if (!model) {

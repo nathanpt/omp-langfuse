@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Config, AgentState } from "./types.js";
+import { clearParentTraceRegistry } from "./parent-trace.js";
 
 export interface SessionRunState {
   currentModel: string;
@@ -13,6 +14,10 @@ export interface SessionRunState {
   setupAttemptedThisSession: boolean;
   /** Session file path (…/<session>.jsonl); captured once per session, survives per-run resets. */
   sessionFilePath: string | undefined;
+  /** `ctx.sessionManager.getSessionId()` of the scope owner; fences in-memory subagents off the parent scope. */
+  ownerSessionId: string | undefined;
+  /** Parent linkage for `inmem:` scopes (no session file); set only for the child scope. */
+  inheritedParent: { sessionId?: string; traceId?: string } | undefined;
   /** Consumed byte offset per advisor transcript file; session-scoped so runs never re-pair history. */
   advisorTranscriptOffsets: Map<string, number>;
 }
@@ -34,6 +39,8 @@ function createSessionRunState(): SessionRunState {
     tracingDisabled: false,
     setupAttemptedThisSession: false,
     sessionFilePath: undefined,
+    ownerSessionId: undefined,
+    inheritedParent: undefined,
     advisorTranscriptOffsets: new Map(),
   };
 }
@@ -160,10 +167,15 @@ export function resetRunState(sessionId = getActiveSessionId()) {
   // sessionFilePath + advisorTranscriptOffsets are session-scoped: agent_end
   // resets the per-run state, but later runs in the same session still need
   // the transcript path and must resume from the consumed offsets.
+  // ownerSessionId + inheritedParent are likewise session-scoped:
+  // session_start resets per-run state before before_agent_start, and the
+  // scope fence must keep distinguishing the owner from in-memory children.
   state.sessionStates.set(normalizedSessionId, {
     ...createSessionRunState(),
     setupAttemptedThisSession: prior?.setupAttemptedThisSession ?? false,
     sessionFilePath: prior?.sessionFilePath,
+    ownerSessionId: prior?.ownerSessionId,
+    inheritedParent: prior?.inheritedParent,
     advisorTranscriptOffsets: prior?.advisorTranscriptOffsets ?? new Map(),
   });
 }
@@ -171,6 +183,7 @@ export function resetRunState(sessionId = getActiveSessionId()) {
 export function clearAllSessionStates() {
   state.sessionStates.clear();
   activeSessionId = DEFAULT_SESSION_ID;
+  clearParentTraceRegistry();
   getSessionRunState();
 }
 

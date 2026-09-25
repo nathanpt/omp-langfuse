@@ -17,7 +17,8 @@ import { basename } from "node:path";
 // collision); import from the deep subpath.
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
 
-import { state, resetRunState, runWithSession, setCurrentSession } from "./src/state.js";
+import { state, resetRunState, runWithSession, setCurrentSession, getSessionRunState } from "./src/state.js";
+import { resolveSessionScope } from "./src/subagent.js";
 import { ensureConfig, promptForConfig, loadConfig } from "./src/config.js";
 import { flushRuntimeTracers, shutdownRuntime } from "./src/langfuse.js";
 import {
@@ -98,8 +99,53 @@ export default async function (pi: ExtensionAPI) {
     }
   };
 
-  const withSession = <T>(ctx: any, fn: () => T): T =>
-    runWithSession(getSessionId(ctx) ?? state.currentSessionId, fn);
+  // Scope fence: resolve the Langfuse session scope for every lifecycle
+  // handler (including session_start) so file-backed subagents land in their
+  // own scope and in-memory subagents cannot clobber an open parent trace.
+  const withSession = <T>(ctx: any, fn: () => T): T => {
+    let sessionFile: string | undefined;
+    try {
+      const file = ctx?.sessionManager?.getSessionFile?.();
+      if (typeof file === "string" && file) {
+        sessionFile = file;
+      }
+    } catch {
+      // Ephemeral (--no-session) mode or throwing host; treat as absent.
+    }
+    let rawSessionId: string | undefined;
+    try {
+      const id = ctx?.sessionManager?.getSessionId?.();
+      if (typeof id === "string" && id) {
+        rawSessionId = id;
+      }
+    } catch {
+      // Treat as absent.
+    }
+    // Snapshot the currently active scope BEFORE entering the child scope: an
+    // in-memory subagent links back to the open parent run through it.
+    const activeRun = getSessionRunState();
+    const decision = resolveSessionScope({
+      sessionFile,
+      rawSessionId,
+      active: {
+        ownerSessionId: activeRun.ownerSessionId,
+        traceId: activeRun.agentState?.traceId,
+        langfuseSessionId: state.currentSessionId,
+        hasOpenRoot: Boolean(activeRun.agentState?.root),
+      },
+    });
+    return runWithSession(decision.scopeId ?? state.currentSessionId, () => {
+      const runState = getSessionRunState();
+      if (rawSessionId && !runState.ownerSessionId) {
+        runState.ownerSessionId = rawSessionId;
+      }
+      if (decision.inheritedParent) {
+        // Overwrite: this scope IS the child.
+        runState.inheritedParent = decision.inheritedParent;
+      }
+      return fn();
+    });
+  };
 
   // Capture model identity + per-token cost from ctx.model. (Breaking change #1:
   // OMP removed the `model_select` event, so the model is read from ctx.model at
