@@ -5,7 +5,7 @@ All notable changes to **omp-langfuse** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-25
 
 ### Added
 - **Subagent traces are attributed, grouped, and linked to their parent session.**
@@ -17,7 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   interactive root (the same walk OMP uses for breadcrumb resolution, so
   `--continue` stays on the real conversation); in-memory subagents link via a
   snapshot of the open parent run and run in a fenced scope that cannot end the
-  parent's root observation. Primary runs are unchanged.
+  parent's root observation — and after a child returns, the parent's own trace
+  still completes and scores as before. Primary runs are unchanged.
 
 ## [0.3.4] - 2026-08-18
 
@@ -130,7 +131,8 @@ First usable release. Ported from
 - 43 unit tests. Live trace audit verified generation usage/cost, tool error flagging, and all
   trace-level scores on a multi-turn, multi-tool run against `glm-5.2`.
 
-[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.4.0
 [0.3.4]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.4
 [0.3.3]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.3
 [0.3.2]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.2
