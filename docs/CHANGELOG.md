@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-18
+
 ### Changed
 - **Typechecked against OMP 19.0.0.** The `@oh-my-pi/pi-coding-agent` devDependency moves from
   16.3.0 to 19.0.0 so `npm run typecheck` sees the current extension API surface. No runtime change:
@@ -159,7 +161,8 @@ First usable release. Ported from
 - 43 unit tests. Live trace audit verified generation usage/cost, tool error flagging, and all
   trace-level scores on a multi-turn, multi-tool run against `glm-5.2`.
 
-[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/nathanpt/omp-langfuse/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.4.1
 [0.4.0]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.4.0
 [0.3.4]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.4
 [0.3.3]: https://github.com/nathanpt/omp-langfuse/releases/tag/v0.3.3
