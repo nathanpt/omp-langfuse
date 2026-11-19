@@ -61,7 +61,23 @@ const OTEL_VISIBILITY_TIMEOUT_MS = 1_500;
 const OTEL_VISIBILITY_POLL_INTERVAL_MS = 200;
 const DEFAULT_SHUTDOWN_STEP_TIMEOUT_MS = 2_000;
 
+// OMP gives every extension event a 30s handler budget EXCEPT `session_shutdown`,
+// which gets 2000ms (SESSION_SHUTDOWN_HANDLER_TIMEOUT_MS). Exceeding it aborts the
+// handler and prints `handler timed out after 2000ms`. The whole shutdown flush is
+// therefore budgeted against one deadline below that, with per-phase caps. Measured
+// on this machine: OTel force flush 392-548ms, visibility check 0-250ms.
+const DEFAULT_SHUTDOWN_DEADLINE_MS = 1_700;
+const SHUTDOWN_FLUSH_BUDGET_MS = 600;
+// 0 = exactly one visibility check, no polling. Waiting out ingestion lag is what
+// blew the shutdown budget; one look (measured 438-473ms after the flush) plus the
+// REST fallback covers the case that actually needs covering.
+const SHUTDOWN_VISIBILITY_CHECK_MS = 0;
+const SHUTDOWN_FALLBACK_BUDGET_MS = 600;
+const SHUTDOWN_SCORE_BUDGET_MS = 400;
+const SHUTDOWN_CLIENT_BUDGET_MS = 120;
+
 let shutdownStepTimeoutMs = DEFAULT_SHUTDOWN_STEP_TIMEOUT_MS;
+let shutdownDeadlineMs = DEFAULT_SHUTDOWN_DEADLINE_MS;
 
 function nowIso() {
   return new Date().toISOString();
@@ -107,7 +123,11 @@ export function getLastRuntimeError(): { scope: string; message: string; timesta
   return lastRuntimeError;
 }
 
-async function withTimeout<T>(label: string, operation: Promise<T> | undefined): Promise<T | undefined> {
+async function withTimeout<T>(
+  label: string,
+  operation: Promise<T> | undefined,
+  budgetMs = shutdownStepTimeoutMs,
+): Promise<T | undefined> {
   if (!operation) {
     return undefined;
   }
@@ -118,9 +138,9 @@ async function withTimeout<T>(label: string, operation: Promise<T> | undefined):
       operation,
       new Promise<undefined>((resolve) => {
         timeout = setTimeout(() => {
-          debugLog(`📊 Langfuse: ${label} timed out after ${shutdownStepTimeoutMs}ms`);
+          debugLog(`📊 Langfuse: ${label} timed out after ${budgetMs}ms`);
           resolve(undefined);
-        }, shutdownStepTimeoutMs);
+        }, budgetMs);
       }),
     ]);
   } finally {
@@ -274,8 +294,12 @@ async function traceExists(rt: LangfuseRuntime, traceId: string): Promise<boolea
   }
 }
 
-async function waitForTraceVisibility(rt: LangfuseRuntime, traceId: string): Promise<boolean> {
-  const deadline = Date.now() + OTEL_VISIBILITY_TIMEOUT_MS;
+async function waitForTraceVisibility(
+  rt: LangfuseRuntime,
+  traceId: string,
+  timeoutMs = OTEL_VISIBILITY_TIMEOUT_MS,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
 
   while (true) {
     if (await traceExists(rt, traceId)) {
@@ -295,14 +319,20 @@ function eventTimestamp(record: { endTime?: string; startTime?: string; timestam
   return record.endTime ?? record.startTime ?? record.timestamp ?? nowIso();
 }
 
-async function fallbackToRestIngestion(rt: LangfuseRuntime) {
+async function fallbackToRestIngestion(
+  rt: LangfuseRuntime,
+  options: { visibilityTimeoutMs?: number } = {},
+) {
   const store = rt.restFallback as RestFallbackStore | undefined;
   if (!store?.trace || store.attempted) {
     return;
   }
   store.attempted = true;
 
-  if (await waitForTraceVisibility(rt, store.trace.id)) {
+  // The visibility poll exists to decide whether a REST fallback is needed. On the
+  // shutdown path it must not spend the whole handler budget deciding, so it gets a
+  // single quick look instead of the full 1500ms poll.
+  if (await waitForTraceVisibility(rt, store.trace.id, options.visibilityTimeoutMs)) {
     return;
   }
 
@@ -371,6 +401,7 @@ async function fallbackToRestIngestion(rt: LangfuseRuntime) {
         reason: "otel-trace-not-visible-after-flush",
       },
     }),
+    Math.min(SHUTDOWN_FLUSH_BUDGET_MS, shutdownStepTimeoutMs),
   );
 
   if (!response) {
@@ -469,12 +500,32 @@ function doShutdownRuntime(): Promise<void> {
     const rt = runtime;
     runtime = null;
 
+    // One deadline for the whole flush, plus a per-phase cap, so no single step can
+    // starve the ones after it and the total stays inside OMP's shutdown budget.
+    const deadline = Date.now() + shutdownDeadlineMs;
+    const remaining = () => Math.max(0, deadline - Date.now());
+    const guard = <T>(label: string, operation: Promise<T> | undefined, capMs: number) => {
+      const budget = Math.min(capMs, shutdownStepTimeoutMs, remaining());
+      if (budget <= 0) {
+        debugLog(`📊 Langfuse: skipped ${label} (shutdown deadline reached)`);
+        return Promise.resolve<T | undefined>(undefined);
+      }
+      return withTimeout(label, operation, budget);
+    };
+
     try {
-      await withTimeout("OTel force flush", rt.tracerProvider?.forceFlush?.());
-      await fallbackToRestIngestion(rt);
-      await withTimeout("Langfuse score flush", rt.scoreClient.flush?.());
-      await withTimeout("Langfuse client shutdown", rt.scoreClient.shutdown?.());
-      await withTimeout("OTel tracer shutdown", rt.tracerProvider?.shutdown?.());
+      // Unconditional work first: a slow conditional phase must never starve the
+      // score flush, which is what carries the trace-level scores.
+      await guard("OTel force flush", rt.tracerProvider?.forceFlush?.(), SHUTDOWN_FLUSH_BUDGET_MS);
+      await guard("Langfuse score flush", rt.scoreClient.flush?.(), SHUTDOWN_SCORE_BUDGET_MS);
+      await guard(
+        "REST fallback",
+        fallbackToRestIngestion(rt, { visibilityTimeoutMs: SHUTDOWN_VISIBILITY_CHECK_MS }),
+        SHUTDOWN_FALLBACK_BUDGET_MS,
+      );
+      await guard("Langfuse client shutdown", rt.scoreClient.shutdown?.(), SHUTDOWN_CLIENT_BUDGET_MS);
+      await guard("OTel tracer shutdown", rt.tracerProvider?.shutdown?.(), SHUTDOWN_CLIENT_BUDGET_MS);
+      debugLog(`📊 Langfuse: shutdown flush used ${shutdownDeadlineMs - remaining()}ms of ${shutdownDeadlineMs}ms`);
     } catch (e) {
       rememberRuntimeError("runtime shutdown", e);
       console.warn("📊 Langfuse: Failed to flush/shutdown cleanly", e);
@@ -541,9 +592,14 @@ export async function flushRuntimeTracers(): Promise<void> {
   }
 }
 
-export function __setRuntimeForTest(rt: LangfuseRuntime | null, timeoutMs = DEFAULT_SHUTDOWN_STEP_TIMEOUT_MS): void {
+export function __setRuntimeForTest(
+  rt: LangfuseRuntime | null,
+  timeoutMs = DEFAULT_SHUTDOWN_STEP_TIMEOUT_MS,
+  deadlineMs = DEFAULT_SHUTDOWN_DEADLINE_MS,
+): void {
   runtime = rt;
   shutdownStepTimeoutMs = timeoutMs;
+  shutdownDeadlineMs = deadlineMs;
   activeSessions.clear();
 }
 

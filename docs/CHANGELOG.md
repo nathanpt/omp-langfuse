@@ -16,6 +16,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `deferHintCompression`) are entry points this extension never calls.
 
 ### Fixed
+- **The shutdown flush now fits OMP's `session_shutdown` budget.** OMP gives every extension event a
+  30 s handler timeout but `session_shutdown` only **2 000 ms**; exceeding it aborts the handler and
+  prints `Extension error (…): handler timed out after 2000ms`. The flush was budgeted per step
+  (2 000 ms each, plus a 1 500 ms trace-visibility poll), so on a normal multi-tool run it regularly
+  overran: measured 392–548 ms for the OTel force flush and up to ~1.9 s in the visibility poll.
+  The flush is now bounded by a single 1 700 ms deadline with per-phase caps, unconditional work
+  (OTel force flush, score flush) runs before the conditional REST fallback so a slow fallback cannot
+  starve the scores, and the shutdown path takes **one** visibility check instead of polling
+  (measured visible 438–473 ms after the flush). Result: 1 257–1 393 ms per run, no harness timeout,
+  with traces, observations, `usageDetails`/`costDetails`, tool error flags, and scores unchanged.
 - **`@types/node` is now a direct devDependency.** It had only been present transitively through
   `protobufjs`, so installing the 19.0.0 SDK reshuffled the tree and `npm run typecheck` failed on
   `node:*` modules and `process` — on a tree that had been green for months.
