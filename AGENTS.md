@@ -125,7 +125,33 @@ Unit tests are not enough for trace-path changes. Verify against a real Langfuse
    table, and the three `advisor_*` scores. An advisor call still streaming at `agent_end` closes
    empty — a known accepted gap, not a regression.
 
-See `.docs/AUDIT-v0.1.0.md` (local) for the canonical example of this audit.
+### Reading traces back through the API (read this before trusting a number)
+
+Measured against the deployment used here (Langfuse server 3.203.3, `@langfuse/*` 5.9.1). Both traps
+below are properties of the server, not of this code:
+
+- **Set an explicit `User-Agent`.** Python's default `urllib` agent is rejected by the ingress with
+  **403** even with correct keys, while `curl`, `langfuse-sdk/<version>` and other explicit agents get
+  **200**. Diagnosis rule: **403 with valid keys means the proxy/WAF; a credential failure is 401.**
+- **`?traceId=` is honoured by observations and ignored by scores.**
+  `GET /api/public/observations?traceId=…` filters correctly (`meta.totalItems` = that trace's own
+  count — e.g. 7 for a 7-observation run). `GET /api/public/scores?traceId=…` returns the project's
+  newest records across *all* traces (`meta.totalItems` ≈ 53,000 = project total), `limit` above 100
+  is an **HTTP 400**, and `/api/public/v2/scores` returns nothing here. So on this version **the API
+  cannot hand you a single trace's scores**: paging 500+ pages or filtering a capped window does not
+  reach them. That gap once produced a convincing "17–18 duplicate score copies per trace" finding
+  when every trace in fact had exactly six — one per name — and `sendScore` was sending each exactly
+  once (verified by instrumenting it).
+
+Practical audit procedure: use the **observations** endpoint for trace shape, cost, and tool error
+flags; if scores are in question, instrument `sendScore` for the send count and read the scores in the
+Langfuse UI rather than through this API. Always trust the per-record field, never the query string:
+
+```python
+tid  = traces["data"][0]["id"]
+recs = scores["data"]
+mine = [r for r in recs if r.get("traceId") == tid]   # correct even when the server ignores the filter
+```
 
 ## Project layout
 
