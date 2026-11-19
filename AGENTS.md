@@ -5,8 +5,8 @@ making changes or cutting a release.
 
 ## Current state
 
-- **Version:** `0.4.0` (see `package.json` and `git describe --tags`); master is past the tag with
-  the subagent trace-attribution story, awaiting the next curated release
+- **Version:** `0.4.1` (see `package.json` and `git describe --tags`); master is past the tag, with
+  the duplicate-score upsert story pending
 - **Repo:** `git@github.com:nathanpt/omp-langfuse.git`, default branch `master`
 - **Distribution:** Git-only OMP plugin (`omp install github:nathanpt/omp-langfuse#vX.Y.Z`). npm is
   not supported by omp's install surface.
@@ -16,7 +16,8 @@ making changes or cutting a release.
 - **Shipped so far:** v0.1.0 (first usable), v0.2.0 (accurate cost via catalog + real GLM-5 rates),
   v0.3.0 (installable as a plugin), v0.3.1/v0.3.2 (CI), v0.3.3 (install docs), v0.3.4 (DeepSeek V4
   rates), v0.4.0 (subagent traces: named `omp-agent:<taskId>`, grouped under the parent session,
-  linked via `parent_trace_id`).
+  linked via `parent_trace_id`), v0.4.1 (shutdown flush fits OMP's 2 000 ms `session_shutdown`
+  handler budget).
 - **Open (optional):** marketplace catalog repo; optional Langfuse CLI skill.
 
 > Update this block when you tag a release.
