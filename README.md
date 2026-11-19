@@ -19,6 +19,26 @@ history.
 
 ---
 
+## Compatibility
+
+- **OMP peer range:** `@oh-my-pi/pi-coding-agent >=16.0.0`. The SDK is imported for **types only**
+  (`import type { ExtensionAPI }`) and the runtime bundle ships no `@oh-my-pi` code — the SDK always
+  comes from the OMP binary. The range describes which OMP versions expose the hooks this extension
+  subscribes to, not a bundled dependency.
+- **Typechecked against OMP 19.0.0** (`devDependencies`). All 18 lifecycle events the extension uses
+  still exist in 19.0.0; the 19.0.0 breaking changes are in SDK entry points this extension never
+  calls (`createAgentSession`, `session.handoff`, hint-compression).
+- **Runtime-verified on OMP 18.22.2** (`omp -e ./dist/index.js -p "…"`).
+- **`@types/node` is a direct devDependency.** It previously resolved transitively through
+  `protobufjs`, so any dependency reshuffle broke `npm run typecheck` on `node:*` modules and
+  `process`.
+- **`@langfuse/*` is pinned at 5.9.1 by `package-lock.json`**, even though `package.json` says
+  `^5.3.0`. A 5.10.x client speaks a newer ingestion dialect and fails against older self-hosted
+  Langfuse servers (observed: media upload `HTTP 405`). Install with the lock (`npm ci`) and do not
+  bump the client unless your Langfuse server is current.
+
+---
+
 ## Why self-computed cost?
 
 OMP's host-reported `usage.cost` is computed from the model registry's rates, which are **zeroed for
