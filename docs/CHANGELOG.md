@@ -5,6 +5,24 @@ All notable changes to **omp-langfuse** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Typechecked against OMP 19.0.0.** The `@oh-my-pi/pi-coding-agent` devDependency moves from
+  16.3.0 to 19.0.0 so `npm run typecheck` sees the current extension API surface. No runtime change:
+  the SDK is a peer dependency imported for types only, `peerDependencies` stays `>=16.0.0`, and all
+  18 lifecycle events this extension subscribes to are present in 19.0.0. The 19.0.0 breaking
+  changes (`createAgentSession.cacheWarming`, `session.handoff` → `session.compact`,
+  `deferHintCompression`) are entry points this extension never calls.
+
+### Fixed
+- **`@types/node` is now a direct devDependency.** It had only been present transitively through
+  `protobufjs`, so installing the 19.0.0 SDK reshuffled the tree and `npm run typecheck` failed on
+  `node:*` modules and `process` — on a tree that had been green for months.
+- **Documented OMP compatibility and the deliberate `@langfuse/*` 5.9.1 lock in the README.** The
+  lock pins a client older than the declared `^5.3.0` range on purpose: 5.10.x clients fail against
+  older self-hosted Langfuse servers.
+
 ## [0.4.0] - 2026-09-25
 
 ### Added
