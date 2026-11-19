@@ -174,3 +174,50 @@ test("REST fallback calls Langfuse ingestion with its SDK receiver", async () =>
     console.log = originalLog;
   }
 });
+
+test("shutdown flush respects its deadline when every phase stalls", async () => {
+  const hanging = () => new Promise<never>(() => {});
+  const runtime = {
+    startObservation: (() => {
+      throw new Error("not used");
+    }) as LangfuseRuntime["startObservation"],
+    propagateAttributes: (() => {
+      throw new Error("not used");
+    }) as LangfuseRuntime["propagateAttributes"],
+    scoreClient: {
+      flush: hanging,
+      shutdown: hanging,
+      api: { trace: { get: hanging }, ingestion: { batch: hanging } },
+    },
+    tracerProvider: { forceFlush: hanging, shutdown: hanging },
+    clearTracerProvider: () => {},
+    restFallback: {
+      trace: { id: "trace-deadline", timestamp: new Date().toISOString(), name: "pi-agent" },
+      observations: [],
+      observationById: new Map(),
+      attempted: false,
+    },
+  } as unknown as LangfuseRuntime;
+
+  const originalWarn = console.warn;
+  const originalLog = console.log;
+  console.warn = () => {};
+  console.log = () => {};
+
+  try {
+    // A generous per-step cap with a 300ms total deadline: OMP gives a
+    // session_shutdown handler 2000ms, so the deadline must dominate, not the steps.
+    __setRuntimeForTest(runtime, 30_000, 300);
+
+    const started = Date.now();
+    await forceShutdownRuntime();
+    const elapsed = Date.now() - started;
+
+    assert.ok(elapsed >= 250, `shutdown returned in ${elapsed}ms, faster than the deadline it should have hit`);
+    assert.ok(elapsed < 1_200, `shutdown took ${elapsed}ms; the 300ms deadline should bound every stalled phase`);
+  } finally {
+    __setRuntimeForTest(null);
+    console.warn = originalWarn;
+    console.log = originalLog;
+  }
+});

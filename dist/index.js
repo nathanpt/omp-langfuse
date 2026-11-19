@@ -34221,7 +34221,14 @@ var lastRuntimeError = null;
 var OTEL_VISIBILITY_TIMEOUT_MS = 1500;
 var OTEL_VISIBILITY_POLL_INTERVAL_MS = 200;
 var DEFAULT_SHUTDOWN_STEP_TIMEOUT_MS = 2e3;
+var DEFAULT_SHUTDOWN_DEADLINE_MS = 1700;
+var SHUTDOWN_FLUSH_BUDGET_MS = 600;
+var SHUTDOWN_VISIBILITY_CHECK_MS = 0;
+var SHUTDOWN_FALLBACK_BUDGET_MS = 600;
+var SHUTDOWN_SCORE_BUDGET_MS = 400;
+var SHUTDOWN_CLIENT_BUDGET_MS = 120;
 var shutdownStepTimeoutMs = DEFAULT_SHUTDOWN_STEP_TIMEOUT_MS;
+var shutdownDeadlineMs = DEFAULT_SHUTDOWN_DEADLINE_MS;
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -34255,7 +34262,7 @@ function rememberRuntimeError(scope, error) {
 function getLastRuntimeError() {
   return lastRuntimeError;
 }
-async function withTimeout(label, operation) {
+async function withTimeout(label, operation, budgetMs = shutdownStepTimeoutMs) {
   if (!operation) {
     return void 0;
   }
@@ -34265,9 +34272,9 @@ async function withTimeout(label, operation) {
       operation,
       new Promise((resolve4) => {
         timeout = setTimeout(() => {
-          debugLog(`\u{1F4CA} Langfuse: ${label} timed out after ${shutdownStepTimeoutMs}ms`);
+          debugLog(`\u{1F4CA} Langfuse: ${label} timed out after ${budgetMs}ms`);
           resolve4(void 0);
-        }, shutdownStepTimeoutMs);
+        }, budgetMs);
       })
     ]);
   } finally {
@@ -34401,8 +34408,8 @@ async function traceExists(rt, traceId) {
     return false;
   }
 }
-async function waitForTraceVisibility(rt, traceId) {
-  const deadline = Date.now() + OTEL_VISIBILITY_TIMEOUT_MS;
+async function waitForTraceVisibility(rt, traceId, timeoutMs = OTEL_VISIBILITY_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
   while (true) {
     if (await traceExists(rt, traceId)) {
       return true;
@@ -34417,13 +34424,13 @@ async function waitForTraceVisibility(rt, traceId) {
 function eventTimestamp(record) {
   return record.endTime ?? record.startTime ?? record.timestamp ?? nowIso();
 }
-async function fallbackToRestIngestion(rt) {
+async function fallbackToRestIngestion(rt, options = {}) {
   const store = rt.restFallback;
   if (!store?.trace || store.attempted) {
     return;
   }
   store.attempted = true;
-  if (await waitForTraceVisibility(rt, store.trace.id)) {
+  if (await waitForTraceVisibility(rt, store.trace.id, options.visibilityTimeoutMs)) {
     return;
   }
   const trace2 = store.trace;
@@ -34485,7 +34492,8 @@ async function fallbackToRestIngestion(rt) {
         fallback: "rest-ingestion",
         reason: "otel-trace-not-visible-after-flush"
       }
-    })
+    }),
+    Math.min(SHUTDOWN_FLUSH_BUDGET_MS, shutdownStepTimeoutMs)
   );
   if (!response) {
     return;
@@ -34569,12 +34577,27 @@ function doShutdownRuntime() {
     }
     const rt = runtime;
     runtime = null;
+    const deadline = Date.now() + shutdownDeadlineMs;
+    const remaining = () => Math.max(0, deadline - Date.now());
+    const guard = (label, operation, capMs) => {
+      const budget = Math.min(capMs, shutdownStepTimeoutMs, remaining());
+      if (budget <= 0) {
+        debugLog(`\u{1F4CA} Langfuse: skipped ${label} (shutdown deadline reached)`);
+        return Promise.resolve(void 0);
+      }
+      return withTimeout(label, operation, budget);
+    };
     try {
-      await withTimeout("OTel force flush", rt.tracerProvider?.forceFlush?.());
-      await fallbackToRestIngestion(rt);
-      await withTimeout("Langfuse score flush", rt.scoreClient.flush?.());
-      await withTimeout("Langfuse client shutdown", rt.scoreClient.shutdown?.());
-      await withTimeout("OTel tracer shutdown", rt.tracerProvider?.shutdown?.());
+      await guard("OTel force flush", rt.tracerProvider?.forceFlush?.(), SHUTDOWN_FLUSH_BUDGET_MS);
+      await guard("Langfuse score flush", rt.scoreClient.flush?.(), SHUTDOWN_SCORE_BUDGET_MS);
+      await guard(
+        "REST fallback",
+        fallbackToRestIngestion(rt, { visibilityTimeoutMs: SHUTDOWN_VISIBILITY_CHECK_MS }),
+        SHUTDOWN_FALLBACK_BUDGET_MS
+      );
+      await guard("Langfuse client shutdown", rt.scoreClient.shutdown?.(), SHUTDOWN_CLIENT_BUDGET_MS);
+      await guard("OTel tracer shutdown", rt.tracerProvider?.shutdown?.(), SHUTDOWN_CLIENT_BUDGET_MS);
+      debugLog(`\u{1F4CA} Langfuse: shutdown flush used ${shutdownDeadlineMs - remaining()}ms of ${shutdownDeadlineMs}ms`);
     } catch (e) {
       rememberRuntimeError("runtime shutdown", e);
       console.warn("\u{1F4CA} Langfuse: Failed to flush/shutdown cleanly", e);
